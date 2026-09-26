@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script>
+</head>
+<body>
+  <div id="login" class="login">
+    <form id="login-form"><a href="/" class="muted">← На сайт сервера</a><div class="rune">ᛟ</div><p class="eyebrow">VALHEIM SERVER CONTROL</p><h1>Добро пожаловать<br>к очагу.</h1>
+      <p class="muted">Мир, друзья и всё, что нужно вашему серверу.</p>
+      <label>Пароль администратора<input id="password" type="password" autocomplete="current-password" required minlength="16"></label>
+      <button class="primary" type="submit">Войти в Hearth <span>↗</span></button><p id="login-error" role="alert"></p>
+    </form><div class="login-art"><div class="sun"></div><div class="mountain one"></div><div class="mountain two"></div><p>ДОМ ТАМ, ГДЕ ГОРИТ ОЧАГ.</p></div>
+  </div>
+  <div id="dashboard" hidden>
+    <aside><a class="brand" href="/admin">ᛟ <b>HEARTH</b></a><p class="eyebrow">ВАШ СЕРВЕР</p><nav>
+      <a href="#overview">◈ Обзор</a><a href="#players">♙ Игроки</a><a href="#world">◇ Мир и копии</a><a href="#settings" id="settings-nav">⚙ Настройки</a><a href="#updates">↗ Обновления</a><a href="#journal">≡ Журнал</a>
+    </nav><div class="aside-bottom"><a href="/" class="quiet">← Предпросмотр сайта</a><br><a href="https://loki.ach-play.ru" class="quiet" target="_blank" rel="noopener noreferrer">Сайт Loki ↗</a><br><span class="tiny">VALHEIM + GRANTAPHER V+</span><button id="logout" class="quiet">Выйти из панели</button></div></aside>
+    <main>
+      <header><span class="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ / ОБЗОР</span><span id="connection" class="pill">Подключение…</span></header>
+      <section id="overview"><div class="title-row"><div><p class="eyebrow accent">ВАШ МИР ЖДЁТ</p><h1 id="world-name">North</h1><p class="muted" id="version-label">Версии пока не установлены</p></div><div class="rune small">ᛟ</div></div>
+        <div class="hero"><div><p class="eyebrow">ОЧАГ ПОД ПРИСМОТРОМ</p><h2>Следующее приключение<br>начинается здесь.</h2><p>Сохранения, игроки и управление в одном месте.</p></div><div class="hero-mark">ᛉ</div></div>
+        <div class="metrics"><article><p>Сервер</p><strong id="server-state">—</strong><small id="uptime">Ожидание данных</small></article><article><p>Игроков онлайн</p><strong id="online">—</strong><small>Опрос каждые 10 секунд</small></article><article><p>Размер сохранений</p><strong id="world-size">—</strong><small id="world-time">—</small></article><article><p>Свободно на диске</p><strong id="disk">—</strong><small>Том сервера</small></article></div>
+        <div class="toolbar"><button data-action="start" class="primary">▶ Запустить</button><button data-action="stop">■ Остановить</button><button data-action="restart">↻ Перезапустить</button><button data-action="backup">↓ Создать копию</button></div>
+        <div id="job" class="notice" role="status">Готово</div>
+      </section>
+      <section id="players"><div class="section-head"><h2>Игроки</h2><span class="eyebrow">ИСТОРИЯ ПРИКЛЮЧЕНИЙ</span></div>
+        <p class="muted">Входы — из лога игры. Время — оценка по A2S с момента установки панели. Если сервер скрывает имена, время не учитывается. Одинаковые имена объединяются.</p>
+        <div class="table-wrap"><table><thead><tr><th>Персонаж</th><th>Входов</th><th>Наблюдаемое время</th><th>Последняя активность</th></tr></thead><tbody id="players-body"></tbody></table></div>
+      </section>
+      <section id="world"><div class="section-head"><h2>Мир и резервные копии</h2><span class="eyebrow">СОХРАНИТЬ ВАЖНОЕ</span></div>
+        <p class="muted">Автоматические копии ждут пустого сервера. Копирование выполняется после остановки и сохранения мира. Ручная копия прервёт игру на время операции.</p>
+        <div class="two-col"><article class="card"><h3>Последние файлы сохранений</h3><div id="world-files" class="file-list"></div><p class="tiny">Это состояние файлов. День, боссы, карта и содержимое мира не анализируются.</p></article><article class="card"><h3>Копии для восстановления</h3><div id="backups" class="file-list"></div><p class="tiny">Скачайте важные копии на другой диск. Том Docker не защищает от потери хоста.</p></article></div>
+      </section>
+      <section id="settings"><div class="section-head"><h2>Настройки</h2><button id="config-reload">Перечитать</button></div>
+        <p class="muted">Настройки из панели сохраняются в томе Docker и имеют приоритет над исходными значениями .env. Перед изменением игровых настроек сервер остановится и создаст резервную копию. Лендинг сохраняется без остановки игры.</p>
+        <div class="settings-tabs" role="tablist" aria-label="Разделы конфигурации"><button role="tab" aria-selected="true" aria-controls="config-server" data-tab="server">Сервер</button><button role="tab" aria-selected="false" aria-controls="config-world" data-tab="world">Мир</button><button role="tab" aria-selected="false" aria-controls="config-mod" data-tab="mod">Valheim Plus</button><button role="tab" aria-selected="false" aria-controls="config-landing" data-tab="landing">Лендинг</button></div>
+        <p id="config-status" role="status" class="muted">Нажмите «Перечитать», чтобы загрузить конфигурацию.</p>
+        <form id="config-form" class="card">
+          <div id="config-server" role="tabpanel"><p id="listing-info" class="muted"></p><div class="settings-grid">
+            <label>Название сервера<input id="cfg-name" aria-describedby="cfg-name-help" maxlength="80" required><small class="field-help" id="cfg-name-help">Название в списке серверов. От 1 до 80 символов; нельзя включать пароль игры. Пробелы по краям удаляются.</small></label>
+            <label>Новый пароль игры<input id="cfg-password" aria-describedby="cfg-password-help" type="password" autocomplete="new-password" minlength="5" maxlength="128" placeholder="Пусто — оставить текущий"><small class="field-help" id="cfg-password-help">Пароль для входа игроков: 5–128 символов, без переносов строк. Пустое поле оставляет прежний пароль. Текущий пароль в браузер не передаётся.</small></label>
+            <label class="check-label"><input id="cfg-public" aria-describedby="cfg-public-help" type="checkbox">Показывать сервер в общем списке<small class="field-help" id="cfg-public-help">Публикация в общем списке Valheim/Steam. В сборке Loki закреплена включённой через REQUIRE_PUBLIC_LISTING=1. Это запрос публикации, а не подтверждение наличия сервера в выдаче.</small></label>
+            <label>Автосохранение мира, секунд<input id="cfg-saveinterval" aria-describedby="cfg-saveinterval-help" type="number" min="60" max="86400" required><small class="field-help" id="cfg-saveinterval-help">Период сохранения мира на диск. Целое число: 60–86400 секунд (1 минута — 24 часа). Исходно 1800 секунд (30 минут).</small></label>
+            <label>Встроенных резервных копий игры<input id="cfg-backups" aria-describedby="cfg-backups-help" type="number" min="1" max="100" required><small class="field-help" id="cfg-backups-help">Количество встроенных копий сохранений Valheim. Целое число: 1–100; исходно 4. Это не количество архивов панели.</small></label>
+            <label>Интервал первой копии, секунд<input id="cfg-backupshort" aria-describedby="cfg-backupshort-help" type="number" min="60" max="604800" required><small class="field-help" id="cfg-backupshort-help">Короткий интервал встроенных копий Valheim. Целое число: 60–604800 секунд (1 минута — 7 суток). Исходно 7200 секунд (2 часа).</small></label>
+            <label>Интервал последующих копий, секунд<input id="cfg-backuplong" aria-describedby="cfg-backuplong-help" type="number" min="60" max="2592000" required><small class="field-help" id="cfg-backuplong-help">Длинный интервал встроенных копий Valheim. Целое число: 60–2592000 секунд (1 минута — 30 суток). Исходно 43200 секунд (12 часов).</small></label>
+          </div><p class="muted">Указанные диапазоны — ограничения панели. Это встроенные копии Valheim. Плановые архивы панели настраиваются отдельно в .env. Лимит игроков находится в Valheim Plus → Сервер.</p></div>
+          <div id="config-world" role="tabpanel" hidden>
+            <label>Имя сохранения<input id="cfg-world-name" list="known-worlds" maxlength="80"><datalist id="known-worlds"></datalist><small>Другое имя переключает мир. Если сохранение не найдено, игра создаст новый мир; существующий не переименовывается.</small></label>
+            <label class="check-label"><input id="cfg-world-managed" type="checkbox">Применять правила панели к этому миру при каждом запуске</label>
+            <p class="muted">Выключено — оставить правила, уже записанные в мире. Это не возвращает прежние значения. Для возврата к обычным правилам включите управление, выберите «Обычный» и снимите дополнительные флажки.</p>
+            <fieldset id="world-rules"><legend>Правила выбранного мира</legend><div class="settings-grid"><label>Набор правил<select id="cfg-preset"></select></label><div id="world-modifiers" class="settings-grid"></div></div><div id="world-keys" class="settings-grid"></div></fieldset>
+            <p class="muted">Сначала применяется набор правил, затем выбранные исключения. Выбор «Из набора правил» убирает старое исключение. Настройки сохраняются отдельно для каждого имени мира. Seed существующего мира и прогресс боссов здесь не изменяются.</p>
+          </div>
+          <div id="config-mod" role="tabpanel" hidden><label>Найти параметр мода<input id="mod-search" type="search" placeholder="Например: вес, портал, улей, maxPlayers"></label><p id="mod-info" class="muted"></p><div id="mod-fields"></div><p class="muted">Изменения раздела действуют, если включён его параметр «Включить раздел». Некоторые настройки относятся к клиенту; их применение зависит от синхронизации V+.</p></div>
+          <div id="config-landing" role="tabpanel" hidden><p class="muted">Эти сведения видны всем посетителям сайта. Пароли сюда не добавляйте. Изменения публикуются без перезапуска игры.</p><div class="settings-grid">
+            <label>Название на сайте<input id="landing-title" maxlength="80"><small>До 80 символов. Пусто — использовать название игрового сервера.</small></label>
+            <label>Адрес для игроков<input id="landing-address" maxlength="260" placeholder="loki.ach-play.ru:2456"><small>Внешний IPv4 или домен и порт игры. Пусто — скрыть адрес. Это подпись на сайте, а не настройка DNS и портов.</small></label>
+            <label>Ссылка на сообщество<input id="landing-community_url" type="url" maxlength="500" placeholder="http://discord.ach-play.ru"><small>Полный HTTP(S)-адрес Discord или страницы-приглашения. Пусто — скрыть кнопку.</small></label>
+            <label>Описание мира<textarea id="landing-description" maxlength="600" rows="4"></textarea><small>До 600 символов, один абзац. Отображается на первом экране сайта.</small></label>
+          </div><a href="/" target="_blank" rel="noopener">Открыть лендинг ↗</a></div>
+          <div class="toolbar settings-save"><button type="button" id="config-save" disabled>Сохранить без запуска</button><button type="button" id="config-apply" class="primary" disabled>Сохранить и запустить</button></div>
+        </form>
+      </section>
+      <section id="updates"><div class="section-head"><h2>Обновления</h2><span class="eyebrow">ПОД ВАШИМ КОНТРОЛЕМ</span></div>
+        <article class="card"><p>Сервер и мод устанавливаются согласованной парой. Перед переключением — проверка на временном мире и резервная копия. Предыдущий релиз остаётся для отката.</p>
+          <form id="update-form" class="update-form"><button class="primary" type="submit">Установить последние версии ↗</button></form>
+          <p class="muted">Версии выбираются автоматически: текущий стабильный сервер Steam и последний стабильный релиз Valheim Plus от Grantapher вместе с BepInEx. Если мод ещё не поддерживает новую игру, обновление отменится до замены рабочего сервера. Игрокам тоже нужно обновить V+.</p>
+          <div class="toolbar"><button id="rollback" data-action="rollback">↶ Откатить сервер, мод и мир</button><a href="https://github.com/Grantapher/ValheimPlus/releases" target="_blank" rel="noreferrer">Релизы Grantapher ↗</a></div>
+        </article>
+      </section>
+      <section id="journal"><div class="section-head"><h2>Журнал</h2><span class="eyebrow">ПОДКЛЮЧЕНИЯ И ДЕЙСТВИЯ</span></div>
+        <div class="table-wrap events"><table><thead><tr><th>Время</th><th>Тип</th><th>Событие</th></tr></thead><tbody id="events-body"></tbody></table></div>
+        <details><summary>Консоль сервера · последние 180 строк</summary><pre id="logs"></pre></details>
+      </section><footer>HEARTH / Личный сервер Valheim · Обновление панели каждые 5 секунд</footer>
+    </main>
+  </div>
+  <dialog id="confirm"><form method="dialog"><h2 id="confirm-title">Подтвердите действие</h2><p id="confirm-text"></p><div class="toolbar"><button value="cancel">Отмена</button><button value="ok" class="primary">Продолжить</button></div></form></dialog>
+</body></html>

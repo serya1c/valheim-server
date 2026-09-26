@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" fill="none">
+<defs>
+ <linearGradient id="sky" x1="800" y1="0" x2="800" y2="900" gradientUnits="userSpaceOnUse"><stop stop-color="#20383e"/><stop offset=".45" stop-color="#668075"/><stop offset=".74" stop-color="#d3b482"/><stop offset="1" stop-color="#2b4140"/></linearGradient>
+ <linearGradient id="lake" x1="900" y1="570" x2="900" y2="900" gradientUnits="userSpaceOnUse"><stop stop-color="#94a695"/><stop offset=".6" stop-color="#304f50"/><stop offset="1" stop-color="#152a2c"/></linearGradient>
+ <radialGradient id="haze"><stop stop-color="#e9c58d" stop-opacity=".52"/><stop offset="1" stop-color="#edc895" stop-opacity="0"/></radialGradient>
+ <radialGradient id="fire"><stop stop-color="#ffbf69" stop-opacity=".8"/><stop offset=".15" stop-color="#e49a43" stop-opacity=".3"/><stop offset="1" stop-color="#e89c44" stop-opacity="0"/></radialGradient>
+ <linearGradient id="reflection" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#dac299" stop-opacity=".45"/><stop offset="1" stop-color="#dac299" stop-opacity="0"/></linearGradient>
+ <filter id="soft"><feGaussianBlur stdDeviation="13"/></filter>
+ <g id="pine"><path d="M0 0 -13 32 -7 30 -23 59 -13 56 -32 91 -18 86 -42 125 -21 120 -50 153 -4 146 -4 171 4 171 4 147 48 154 22 119 40 124 18 85 31 91 12 55 23 60 7 30 14 34Z" fill="currentColor"/></g>
+ <g id="bird" stroke="#213536" stroke-width="2"><path d="M-10 0Q-5-5 0 0Q5-5 10 0"/></g>
+</defs>
+<path fill="url(#sky)" d="M0 0H1600V900H0Z"/>
+<ellipse cx="1140" cy="420" rx="590" ry="400" fill="url(#haze)"/>
+<circle cx="1110" cy="268" r="50" fill="#e1c697" opacity=".82"/><circle cx="1110" cy="268" r="77" fill="#e5ca98" opacity=".05"/>
+<path d="M0 480 113 377 161 397 320 246 384 288 420 246 549 348 661 234 709 255 846 122 969 249 1030 215 1172 383 1238 298 1332 350 1436 224 1507 292 1600 243V655H0Z" fill="#71877f"/>
+<path d="m846 122-83 143 72-42 45 58-11-86 100 54ZM320 246l-85 106 95-55 48 34ZM1436 224l-70 97 70-43 55 32Z" fill="#c6cbb2" opacity=".6"/>
+<path d="M0 523 183 407 299 489 425 380 565 498 720 376 803 438 907 318 1031 461 1100 410 1241 518 1363 408 1430 436 1600 362V660H0Z" fill="#526f69"/>
+<path d="m907 318-73 128 75-60 51 41-16-46 87 80Z" fill="#94a79a" opacity=".5"/>
+<path d="M0 617 155 521 314 592 472 536 579 599 756 516 887 582 993 522 1181 612 1286 537 1439 584 1600 480V690H0Z" fill="#3d5c59"/>
+<path d="M0 615Q370 575 708 617T1600 587V900H0Z" fill="url(#lake)"/>
+<path d="M670 625Q1100 576 1553 625" stroke="#cfcdad" stroke-opacity=".3" stroke-width="25" filter="url(#soft)"/>
+<path d="m1098 610 25 0 77 269h-180Z" fill="url(#reflection)"/>
+<g stroke="#bdd0bc" stroke-opacity=".18"><path d="M760 654h220m25 14h188m-380 24h187m-320 31h290m56 23h301M460 788h323m365 13h203m-357 40h267m-82-139h180m-192-72h150m-177 37h96"/></g>
+<path d="M1600 531q-90 80-207 97l-187 50 87 40 156 14 151 53Z" fill="#203b38"/>
+<path d="M0 621q169-61 286-18t232 17l-89 39-239 35L0 733Z" fill="#274440"/>
+<g color="#24433e"><use href="#pine" transform="translate(1332 492) scale(.54)"/><use href="#pine" transform="translate(1370 482) scale(.66)"/><use href="#pine" transform="translate(1441 419) scale(1)"/><use href="#pine" transform="translate(1515 452) scale(.8)"/><use href="#pine" transform="translate(1572 397) scale(1.2)"/><use href="#pine" transform="translate(300 489) scale(.6)"/><use href="#pine" transform="translate(362 526) scale(.4)"/></g>
+<g opacity=".48" filter="url(#soft)" fill="#a9b9a5"><ellipse cx="1180" cy="600" rx="450" ry="12"/><ellipse cx="584" cy="567" rx="250" ry="10"/></g>
+<!-- A single longship on the fjord. -->
+<g transform="translate(1060 644)"><path d="M-46 22Q5 53 72 20L92 0 87-13 79-16 76-9 83-5 79 4 65 16-43 13-54 4Z" fill="#233b38"/><path d="M12-91V28" stroke="#273b37" stroke-width="4"/><path d="M15-87Q52-78 69-16L15-10Z" fill="#cbb387"/><path d="M13-86Q-16-69-22-15L11-10Z" fill="#a68f69"/><path d="M33-80Q47-59 50-13" stroke="#6b5542" stroke-width="13" opacity=".58"/><path d="m14-90 19 5-18 8" fill="#806449"/><path d="m-33 27 8-11m12 16 7-16m14 17 4-17m17 14 1-15m18 11-2-11" stroke="#baab83" stroke-opacity=".4" stroke-width="3"/></g>
+<!-- Foreground shore and shelter. -->
+<path d="M0 857 197 805 348 840 506 788 714 816 914 753 1101 782 1244 754 1418 791 1600 739V900H0Z" fill="#132b28"/>
+<path d="M1046 773 1046 697 1130 658 1217 713 1217 791Z" fill="#3e3f31"/><path d="m1024 710 28-43 72-34 104 71-19 10-87-56-76 48Z" fill="#142c29"/>
+<path d="m1034 702 90-68 103 70" stroke="#53614a" stroke-width="5"/>
+<path d="M1084 720h25v32h-25Zm57-4h28v32h-28Z" fill="#e0a760"/><path d="M1097 720v32m-13-16h25m46-20v32m-14-16h28" stroke="#614f33" stroke-width="3"/><path d="M1180 741h21v43h-21Z" fill="#172b26"/>
+<path d="m1075 651 0-29 14-3 0 25" stroke="#394338" stroke-width="12"/><path d="M1080 623q-21-29 15-48t-17-41" stroke="#b7b99c" stroke-opacity=".3" stroke-width="12" filter="url(#soft)"/>
+<ellipse cx="1204" cy="790" rx="139" ry="87" fill="url(#fire)"/>
+<path d="m1180 811 44-9m-39-8 37 18" stroke="#51482f" stroke-width="8"/>
+<path d="M1194 805q-22-24 2-37-5 12 7 11 4-19 2-30 27 25 17 45-8 13-28 11Z" fill="#e89c49"/><path d="M1202 804q-13-17 5-27-2 14 7 11 8 14-12 16Z" fill="#ffdaa0"/>
+<g fill="#eabc79"><circle cx="1216" cy="739" r="1.5"/><circle cx="1192" cy="751" r="1"/><circle cx="1200" cy="728" r="1.2"/></g>
+<!-- Traveller, cloak facing the lake. -->
+<path d="m1284 750-11 9-8 45 39 1-9-45Z" fill="#101f20"/><circle cx="1286" cy="744" r="8" fill="#182a29"/><path d="m1279 804-3 19m16-19 3 19" stroke="#101f20" stroke-width="6"/><path d="m1309 765-3 61" stroke="#584d38" stroke-width="3"/><path d="m1296 768 11 10" stroke="#162523" stroke-width="6"/>
+<g color="#112a26"><use href="#pine" transform="translate(64 316) scale(2.9)"/><use href="#pine" transform="translate(223 421) scale(2.4)"/><use href="#pine" transform="translate(1540 255) scale(3.8)"/><use href="#pine" transform="translate(1434 489) scale(2.3)"/></g>
+<g color="#0e2322"><use href="#pine" transform="translate(-12 276) scale(3.5)"/><use href="#pine" transform="translate(1610 175) scale(4.6)"/></g>
+<g opacity=".65"><use href="#bird" transform="translate(1046 362) scale(.8)"/><use href="#bird" transform="translate(1080 350) scale(.6)"/><use href="#bird" transform="translate(1009 349) scale(.5)"/></g>
+<path d="M0 880q160-45 340-8t391-24 445 22 424-35v65H0Z" fill="#0f2020"/>
+</svg>

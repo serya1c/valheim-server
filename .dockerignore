@@ -1,0 +1,10 @@
+.env
+__pycache__
+**/__pycache__
+*.pyc
+tests
+*.zip
+.git
+
+installer
+installer-tests
