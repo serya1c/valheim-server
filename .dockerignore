@@ -10,3 +10,5 @@ installer
 installer-tests
 
 installer-linux
+
+.env.*

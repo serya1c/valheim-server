@@ -112,22 +112,29 @@ public sealed class SourceClient : IDisposable
     const string KnownHash="1f6f1944b2285c34d663cbaf4353c846cabd4c35b9549d9006dd302ee4bda79b";
     readonly HttpClient http=new(new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromMinutes(3)};
     static readonly Regex VersionPattern=new(@"^\d+\.\d+\.\d+(?:\.\d+)?$",RegexOptions.CultureInvariant);
-    public SourceClient(){http.DefaultRequestHeaders.UserAgent.ParseAdd("Loki-Mod-Installer/1.0");}
+    readonly string endpoint;
+    public static string Endpoint(string website)
+    {
+        if(!Uri.TryCreate(website,UriKind.Absolute,out var uri)||uri.Scheme!="https"||uri.Port!=443||!string.IsNullOrEmpty(uri.UserInfo)||uri.AbsolutePath!="/"||uri.Query!=""||uri.Fragment!=""||website.Any(char.IsWhiteSpace)||website.Contains('\\'))
+            throw new InvalidDataException("Укажите HTTPS-адрес сайта сервера без пути, параметров и пароля (порт 443).");
+        return uri.GetLeftPart(UriPartial.Authority)+"/api/public";
+    }
+    public SourceClient(string website="https://loki.ach-play.ru"){endpoint=Endpoint(website);http.DefaultRequestHeaders.UserAgent.ParseAdd("Loki-Mod-Installer/1.1");}
     public void Dispose()=>http.Dispose();
-    static bool Allowed(Uri uri)=>uri.Scheme=="https"&&uri.Port==443&&string.IsNullOrEmpty(uri.UserInfo)&&new[]{"loki.ach-play.ru","api.github.com","github.com","release-assets.githubusercontent.com","objects.githubusercontent.com"}.Contains(uri.Host,StringComparer.OrdinalIgnoreCase);
+    static bool Allowed(Uri uri)=>uri.Scheme=="https"&&uri.Port==443&&string.IsNullOrEmpty(uri.UserInfo)&&new[]{"api.github.com","github.com","release-assets.githubusercontent.com","objects.githubusercontent.com"}.Contains(uri.Host,StringComparer.OrdinalIgnoreCase);
     async Task<byte[]> Get(string address,long maximum)
     {
-        var uri=new Uri(address);
+        var uri=new Uri(address);bool serverRequest=address==endpoint;var serverOrigin=new Uri(endpoint);
         for(int redirects=0;redirects<6;redirects++)
         {
-            if(!Allowed(uri))throw new InvalidDataException("Источник или перенаправление загрузки не разрешены.");
+            if(serverRequest ? uri.Scheme!="https"||uri.Authority!=serverOrigin.Authority||!string.IsNullOrEmpty(uri.UserInfo) : !Allowed(uri))throw new InvalidDataException("Источник или перенаправление загрузки не разрешены.");
             using var response=await http.GetAsync(uri,HttpCompletionOption.ResponseHeadersRead);
             if((int)response.StatusCode is >=300 and <400)
             {
                 var location=response.Headers.Location??throw new IOException("Пустое перенаправление.");
                 var next=location.IsAbsoluteUri?location:new Uri(uri,location);
                 // The server API must stay on the server host. GitHub assets may use its CDN.
-                if(uri.Host=="loki.ach-play.ru"&&next.Host!=uri.Host)throw new IOException("API Loki перенаправляет на посторонний сайт.");
+                if(serverRequest&&(next.Scheme!=serverOrigin.Scheme||next.Authority!=serverOrigin.Authority))throw new IOException("API сервера перенаправляет на посторонний сайт.");
                 uri=next;continue;
             }
             response.EnsureSuccessStatusCode();
@@ -143,13 +150,14 @@ public sealed class SourceClient : IDisposable
     public static ServerVersion ParseServer(byte[] bytes)
     {
         using var json=JsonDocument.Parse(bytes);var root=json.RootElement;
+        if(root.TryGetProperty("mode",out var mode)&&mode.GetString()=="vanilla")throw new InvalidDataException("Это ванильный сервер. Установка V+ не требуется; используйте клиент без модов.");
         string game=root.TryGetProperty("game",out var g)&&g.ValueKind==JsonValueKind.String?g.GetString()!:"";
         string mod=root.TryGetProperty("mod",out var m)&&m.ValueKind==JsonValueKind.String?m.GetString()!:"";
-        if(!VersionPattern.IsMatch(game)||!VersionPattern.IsMatch(mod))throw new InvalidDataException("Loki ещё не сообщает установленную версию игры и мода. Повторите позже.");
+        if(!VersionPattern.IsMatch(game)||!VersionPattern.IsMatch(mod))throw new InvalidDataException("Сервер ещё не сообщает установленную версию игры и мода. Повторите позже.");
         return new(game,mod);
     }
     public Task<ServerVersion> Server()=>ReadServer();
-    async Task<ServerVersion> ReadServer()=>ParseServer(await Get(ServerUrl,1024*1024));
+    async Task<ServerVersion> ReadServer()=>ParseServer(await Get(endpoint,1024*1024));
     public static ReleaseAsset ParseRelease(byte[] bytes,ServerVersion server)
     {
         using var json=JsonDocument.Parse(bytes);var root=json.RootElement;

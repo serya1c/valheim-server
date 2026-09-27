@@ -12,9 +12,16 @@ async function refreshPublic(){
    // Preserve the small navigation subtitle without using HTML from settings.
    if(node.querySelector('small')){node.firstChild.textContent=data.title;}else node.textContent=data.title;
   });
-  document.title=data.title+' — сервер Valheim с Valheim Plus | Подключение';
+  const plus=data.mode!=='vanilla';
+  document.querySelectorAll('[data-listing]').forEach(n=>n.hidden=!data.public_listing);
+  document.querySelectorAll('[data-site-url]').forEach(n=>n.textContent=data.site_url);
+  document.querySelectorAll('[data-site-link]').forEach(n=>n.href=data.site_url);
+  document.querySelectorAll('[data-proton-command]').forEach(n=>n.textContent='bash Loki-Mod-Installer-Linux.sh --server '+data.site_url);
+  document.querySelectorAll('[data-plus]').forEach(n=>n.hidden=!plus);document.querySelectorAll('[data-vanilla]').forEach(n=>n.hidden=plus);
+  setText('mode-label',plus?'Valheim Plus':'Ванильный сервер');
+  document.title=data.title+' — сервер Valheim · '+(plus?'Valheim Plus':'Без модов')+' | Подключение';
   setText('server-description',data.description);setText('listing-name',data.server_name);
-  setText('public-game',data.game||'Ещё не установлена');setText('public-mod',data.mod||'Ещё не установлен');
+  setText('public-game',data.game||'Ещё не установлена');setText('public-mod',plus?(data.mod?'V+ '+data.mod:'V+ ещё не установлен'):'Без модов');
   const status=el('public-status');const dot=document.createElement('i');dot.className='dot'+(data.players!==null?' online':'');
   status.replaceChildren(dot,document.createTextNode(data.players!==null?'Очаг горит':data.running?'Мир запущен':'Сервер на привале'));
   setText('public-players',data.players===null?'—':String(data.players));

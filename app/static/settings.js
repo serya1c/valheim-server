@@ -20,7 +20,7 @@ function loadWorldRules(name){
 }
 function renderMod(){
   $('mod-fields').replaceChildren();const mod=configData.mod;
-  $('mod-info').textContent=mod.available?`${mod.filename} · Параметров: ${mod.entries.length}. Технические имена оставлены рядом с переводом.`:'Файл мода пока не создан. Запустите установленный V+ один раз и нажмите «Перечитать».';
+  $('mod-info').textContent=configData.server.mode==='vanilla'?'Выбран ванильный режим. Конфигурация V+ сохранена для возврата, но в ванильном релизе не используется.':mod.available?`${mod.filename} · Параметров: ${mod.entries.length}. Технические имена оставлены рядом с переводом.`:'Файл мода пока не создан. Запустите установленный V+ один раз и нажмите «Перечитать».';
   const groups=new Map();
   mod.entries.forEach(e=>{
     if(!groups.has(e.section)){const d=document.createElement('details');d.className='mod-section';const s=document.createElement('summary');s.textContent=MOD_SECTIONS_RU[e.section]||`Раздел ${e.section}`;d.append(s);const grid=document.createElement('div');grid.className='settings-grid';d.append(grid);groups.set(e.section,{d,grid});$('mod-fields').append(d);}
@@ -41,17 +41,19 @@ async function loadConfig(force=false){
   if(configDirty&&!force&&!await confirmAction('Перечитать настройки и отменить несохранённые изменения во всех вкладках?'))return;
   try{
     configData=await api('/api/config');configDirty=false;
-    for(const key of ['title','description','address','community_url'])$('landing-'+key).value=configData.landing[key];
+    for(const key of ['title','description','address','community_url','site_url'])$('landing-'+key).value=configData.landing[key];
     for(const key of ['name','saveinterval','backups','backupshort','backuplong'])$('cfg-'+key).value=configData.server[key];
-    $('cfg-password').value='';$('cfg-public').checked=configData.server.public;$('listing-info').textContent=(configData.listing_required?'Публикация в Steam включена принудительно. ':'')+'Имя в списке: '+configData.advertised_name+'. Доступность извне зависит от UDP-портов 2456–2457 и работы Steam.';$('cfg-world-name').value=configData.world_name;
+    $('cfg-mode').value=configData.server.mode;$('cfg-add_site').checked=configData.server.add_site;
+    $('ports-info').textContent=`UDP: ${configData.ports.game}–${configData.ports.query}. Порты задаются в .env (GAME_PORT и GAME_QUERY_PORT), применяются пересозданием контейнера. Другой копии нужны отдельные порты, имя проекта Compose и том данных.`;
+    $('cfg-password').value='';$('cfg-public').checked=configData.server.public;$('listing-info').textContent=(configData.listing_required?'Публикация в Steam включена принудительно. ':'')+'Имя в списке: '+configData.advertised_name+'. Доступность извне зависит от указанных ниже UDP-портов и работы Steam.';$('cfg-world-name').value=configData.world_name;
     $('known-worlds').replaceChildren();configData.world_names.forEach(name=>{const o=document.createElement('option');o.value=name;$('known-worlds').append(o);});
     loadWorldRules(configData.world_name);renderMod();$('mod-search').value='';
     configNotice('Загружены сохранённые настройки. Изменения в каждой вкладке сохраняются отдельно.');configButtons();
   }catch(e){configNotice(e.message,true);}
 }
 function currentConfigValues(){
-  if(configTab==='landing')return Object.fromEntries(['title','description','address','community_url'].map(k=>[k,$('landing-'+k).value]));
-  if(configTab==='server')return {name:$('cfg-name').value,password:$('cfg-password').value,public:$('cfg-public').checked,...Object.fromEntries(['saveinterval','backups','backupshort','backuplong'].map(k=>[k,Number($('cfg-'+k).value)]))};
+  if(configTab==='landing')return Object.fromEntries(['title','description','address','community_url','site_url'].map(k=>[k,$('landing-'+k).value]));
+  if(configTab==='server')return {mode:$('cfg-mode').value,add_site:$('cfg-add_site').checked,name:$('cfg-name').value,password:$('cfg-password').value,public:$('cfg-public').checked,...Object.fromEntries(['saveinterval','backups','backupshort','backuplong'].map(k=>[k,Number($('cfg-'+k).value)]))};
   if(configTab==='world')return {name:$('cfg-world-name').value.trim(),rules:{managed:$('cfg-world-managed').checked,preset:$('cfg-preset').value,modifiers:Object.fromEntries([...document.querySelectorAll('[data-modifier]')].map(e=>[e.dataset.modifier,e.value])),keys:[...document.querySelectorAll('[data-world-key]:checked')].map(e=>e.dataset.worldKey)}};
   return Object.fromEntries([...document.querySelectorAll('[data-cfg-id]')].map(e=>[e.dataset.cfgId,e.value]).filter(([id,value])=>configData.mod.entries.find(e=>e.id===id).value!==value));
 }
@@ -60,7 +62,7 @@ async function saveConfig(restart){
   const panel=$('config-'+configTab);for(const input of panel.querySelectorAll('input,select,textarea')){if(!input.disabled&&!input.reportValidity())return;}
   if(configTab==='world'&&$('cfg-world-name').value.trim()!==configLoadedWorld){configNotice('Подтвердите выбор имени мира: выйдите из поля, затем проверьте его правила.',true);return;}
   const scope=configTab, names={server:'сервера',world:'мира',mod:'Valheim Plus',landing:'лендинга'};
-  if(!await confirmAction(scope==='landing'?'Опубликовать описание и адрес на сайте? Другие вкладки не сохранятся. Игра продолжит работать.':`Сохранить настройки ${names[scope]}? Сервер остановится, игроки будут отключены. Перед изменением будет создана копия. ${restart?'После сохранения установленный сервер запустится.':'Сервер останется остановленным.'} Изменения остальных вкладок не сохраняются и будут перечитаны.`))return;
+  if(!await confirmAction(scope==='landing'?'Опубликовать описание и адрес на сайте? Другие вкладки не сохранятся. Игра продолжит работать.':`Сохранить настройки ${names[scope]}? Сервер остановится, игроки будут отключены. Перед изменением будет создана копия. ${restart?'После сохранения установленный сервер запустится. Смена режима применяется отдельно через «Обновления».':'Сервер останется остановленным.'} Изменения остальных вкладок не сохраняются и будут перечитаны.`))return;
   try{
     configSaving=true;configButtons();
     await api('/api/action',{action:'configure',scope,revision:configData.revision,values:currentConfigValues(),restart});

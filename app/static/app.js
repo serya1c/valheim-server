@@ -31,7 +31,7 @@ function confirmAction(message) {
   });
 }
 async function action(name, data = {}) {
-  const prompts = {stop:'Остановить сервер? Игроки будут отключены. Мир сохранится перед выходом.',restart:'Перезапустить сервер? Текущие подключения будут закрыты.',backup:'Сервер остановится для согласованной копии мира, затем запустится снова, если работал.',install:'Скачать последние стабильные версии сервера и мода и проверить их совместимость? После проверки сервер остановится для резервной копии и переключения.',restore:'Заменить текущий мир выбранной копией? Более поздний прогресс будет потерян. Текущий мир предварительно сохранится отдельно.',rollback:'Вернуть предыдущий сервер, мод, конфигурацию и мир до обновления? Прогресс после обновления останется только в отдельной резервной копии.'};
+  const prompts = {stop:'Остановить сервер? Игроки будут отключены. Мир сохранится перед выходом.',restart:'Перезапустить сервер? Текущие подключения будут закрыты.',backup:'Сервер остановится для согласованной копии мира, затем запустится снова, если работал.',install:'Установить последнюю версию в режиме, выбранном в настройках сервера, и проверить запуск? После проверки сервер остановится для резервной копии и переключения.',restore:'Заменить текущий мир выбранной копией? Более поздний прогресс будет потерян. Текущий мир предварительно сохранится отдельно.',rollback:'Вернуть предыдущий сервер, мод, конфигурацию и мир до обновления? Прогресс после обновления останется только в отдельной резервной копии.'};
   if (data.approval_token) prompts.install = `Одобрить Valheim ${pendingApproval?.actual} + V+ ${pendingApproval?.mod}? Автор мода указал Valheim ${pendingApproval?.declared}. Сервер повторит проверку, сохранит мир и настройки и попробует обновиться. При неудачном запуске будет предпринят автоматический откат.`;
   if (prompts[name] && !await confirmAction(prompts[name])) return;
   try { await api('/api/action', {action:name,...data}); await refresh(); }
@@ -45,7 +45,9 @@ async function refresh() {
     window.dispatchEvent(new CustomEvent('hearth-status',{detail:s}));
     $('connection').textContent = '● Панель на связи';
     $('world-name').textContent = s.world;
-    $('version-label').textContent = s.versions ? `Valheim ${s.versions.game} · Valheim Plus ${s.versions.mod} / Grantapher` : 'Ожидает установки · смотрите журнал';
+    $('project-link').href=s.site_url;
+    $('update-mode').textContent='Следующая установка: '+(s.target_mode==='vanilla'?'ванильный Valheim, без BepInEx и V+.':'Valheim Plus от Grantapher.')+(s.versions && (s.versions.mode||'plus')!==s.target_mode?' Сейчас установлен другой режим. Обновление переключит его с резервной копией мира.':'');
+    $('version-label').textContent = s.versions ? `Valheim ${s.versions.game} · ${s.versions.mode==='vanilla'?'Без модов':'Valheim Plus '+s.versions.mod+' / Grantapher'}` : 'Ожидает установки · смотрите журнал';
     $('server-state').textContent = s.running ? (s.online ? 'В сети' : 'Нет ответа A2S') : 'Остановлен';
     $('uptime').textContent = s.running ? 'Процесс работает: ' + duration(s.uptime) : 'Процесс не запущен';
     $('online').textContent = s.online ? s.online.count : '—';

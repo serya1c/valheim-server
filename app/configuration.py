@@ -12,6 +12,37 @@ from urllib.parse import urlsplit
 LANDING_DEFAULTS = {'title':'Loki', 'address':'loki.ach-play.ru:2456', 'community_url':'http://discord.ach-play.ru',
     'description':'Собери друзей у очага. Построй первый дом, подними паруса и отправляйся навстречу неизведанному. В этом мире найдётся место для твоей истории.'}
 PROJECT_URL = 'https://loki.ach-play.ru'
+LANDING_DEFAULTS['site_url'] = PROJECT_URL
+
+def landing_defaults():
+    values = {**LANDING_DEFAULTS, **{key: os.environ[env] for key, env in
+        [('site_url','SITE_URL'), ('title','SITE_TITLE'), ('address','SERVER_ADDRESS'), ('community_url','COMMUNITY_URL')]
+        if env in os.environ}}
+    values['site_url'] = site_url(values['site_url'])
+    return values
+
+def server_mode(value):
+    if value not in ('plus', 'vanilla'):
+        raise ValueError('Режим сервера: plus или vanilla')
+    return value
+
+def game_ports():
+    port, query = int(os.getenv('GAME_PORT', '2456')), int(os.getenv('GAME_QUERY_PORT', '2457'))
+    if not 1024 <= port <= 65534 or query != port + 1:
+        raise ValueError('GAME_PORT: 1024–65534; GAME_QUERY_PORT должен быть на 1 больше')
+    return port, query
+
+def site_url(value):
+    clean_text(value, 'Адрес сайта', 1, 500)
+    url = urlsplit(value)
+    if url.scheme not in ('http','https') or not url.hostname or url.username or url.password or url.path not in ('','/') or url.query or url.fragment or not re.fullmatch(r'[a-zA-Z0-9.:-]+', url.netloc):
+        raise ValueError('Адрес сайта: HTTP(S), домен или IPv4 и необязательный порт; без пути, пароля и параметров')
+    try:
+        if url.port is not None and not 1 <= url.port <= 65535: raise ValueError()
+    except ValueError:
+        raise ValueError('Недопустимый порт сайта') from None
+    return value.rstrip('/')
+
 
 
 def listing_required():
@@ -143,12 +174,14 @@ class Configuration:
     def load(self):
         if self.path.exists():
             data = json.loads(self.path.read_text(encoding='utf-8'))
-            data['landing'] = {**LANDING_DEFAULTS, **data.get('landing', {})}
+            data['landing'] = {**landing_defaults(), **data.get('landing', {})}
+            data['server'].setdefault('mode', 'plus')
+            data['server'].setdefault('add_site', True)
             return data
         name = os.getenv('WORLD_NAME','North')
         return {'server': {'name':os.getenv('SERVER_NAME','Loki'), 'password':os.getenv('SERVER_PASSWORD',''),
-            'public':os.getenv('SERVER_PUBLIC','1') == '1', 'saveinterval':1800, 'backups':4,
-            'backupshort':7200, 'backuplong':43200}, 'world_name':name, 'worlds':{name:default_world()}, 'landing':dict(LANDING_DEFAULTS)}
+            'mode':server_mode(os.getenv('SERVER_MODE','plus')), 'add_site':True, 'public':os.getenv('SERVER_PUBLIC','1') == '1', 'saveinterval':1800, 'backups':4,
+            'backupshort':7200, 'backuplong':43200}, 'world_name':name, 'worlds':{name:default_world()}, 'landing':landing_defaults()}
 
     def mod_path(self):
         for name in ('org.bepinex.plugins.valheim_plus.cfg', 'valheim_plus.cfg'):
@@ -158,12 +191,11 @@ class Configuration:
         return None
 
     def advertised_name(self):
-        name = self.load()['server']['name']
-        if not listing_required():
+        data = self.load()
+        name, url = data['server']['name'], data['landing']['site_url']
+        if not data['server']['add_site'] or not (listing_required() or data['server']['public']) or len(url) > 70 or url in name:
             return name
-        if PROJECT_URL in name:
-            return name
-        return name[:80-len(PROJECT_URL)-3].rstrip() + ' | ' + PROJECT_URL
+        return name[:80-len(url)-3].rstrip() + ' | ' + url
 
     def mod_text(self):
         p = self.mod_path()
@@ -194,9 +226,9 @@ class Configuration:
                         names.add(world_name(candidate))
         path = self.mod_path()
         return {**data, 'revision':revision, 'world_names':sorted(names),
-            'listing_required':listing_required(), 'advertised_name':self.advertised_name(),
+            'ports':{'game':game_ports()[0], 'query':game_ports()[1]}, 'listing_required':listing_required(), 'advertised_name':self.advertised_name(),
             'presets':PRESETS, 'modifiers':MODIFIERS, 'world_keys':WORLD_KEYS,
-            'mod':{'available':bool(path), 'filename':path.name if path else None, 'entries':cfg_entries(text)}}
+            'mod':{'available':bool(path) and data['server']['mode'] == 'plus', 'filename':path.name if path else None, 'entries':cfg_entries(text) if data['server']['mode'] == 'plus' else []}}
 
     def prepare(self, data):
         if data.get('revision') != self.revision():
@@ -218,11 +250,13 @@ class Configuration:
             clean_text(s['password'], 'Пароль игры', 5, 128)
             if not s['name'] or s['password'].casefold() in s['name'].casefold():
                 raise ValueError('Название пустое или содержит пароль игры')
+            server_mode(s['mode'])
+            if type(s['add_site']) is not bool: raise ValueError('Ссылка в названии: ожидается переключатель')
             if type(s['public']) is not bool:
                 raise ValueError('Видимость сервера: ожидается переключатель')
             if listing_required():
                 s['public'] = True
-                if s['password'].casefold() in PROJECT_URL.casefold():
+                if s['password'].casefold() in settings['landing']['site_url'].casefold():
                     raise ValueError('Пароль игры не должен совпадать с частью адреса сайта в имени сервера')
             for key, low, high in [('saveinterval',60,86400),('backups',1,100),('backupshort',60,604800),('backuplong',60,2592000)]:
                 if type(s[key]) is not int or not low <= s[key] <= high:
@@ -249,6 +283,9 @@ class Configuration:
             landing = {**settings['landing'], **values}
             for key, limit in [('title',80),('description',600),('address',260),('community_url',500)]:
                 landing[key] = clean_text(landing[key], 'Лендинг: '+key, maximum=limit).strip()
+            landing['site_url'] = site_url(landing['site_url'])
+            if settings['server']['password'] and settings['server']['password'].casefold() in landing['site_url'].casefold():
+                raise ValueError('Адрес сайта не должен содержать пароль игры')
             address = landing['address']
             if address:
                 match = re.fullmatch(r'([a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?):(\d{1,5})', address)
@@ -259,6 +296,8 @@ class Configuration:
                 raise ValueError('Ссылка сообщества: полный HTTP(S)-адрес без пароля и пробелов')
             settings['landing'] = landing
         elif scope == 'mod':
+            if settings['server']['mode'] != 'plus':
+                raise ValueError('В ванильном режиме настройки V+ не применяются')
             path = self.mod_path()
             if not path:
                 raise ValueError('Файл V+ появится после первого запуска установленного мода')

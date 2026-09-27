@@ -15,6 +15,25 @@ def fake_pe():
     data=bytearray(150);data[:2]=b'MZ';struct.pack_into('<I',data,0x3c,100);data[100:106]=b'PE\0\0\x64\x86';return data
 
 
+class EndpointTests(unittest.TestCase):
+    def test_custom_server_origin(self):
+        self.assertEqual(m.server_endpoint('https://north.example.org/'),'https://north.example.org/api/public')
+    def test_invalid_origins(self):
+        for url in ['http://north.example.org','https://u:p@north.example.org','https://north.example.org/path','https://north.example.org?x=1','https://north.example.org:8443']:
+            with self.subTest(url=url),self.assertRaises(ValueError):m.server_endpoint(url)
+    def test_vanilla_refused(self):
+        with patch.object(m,'fetch',return_value=b'{"mode":"vanilla","game":"1.0.16","mod":null}'),self.assertRaisesRegex(ValueError,'ванильный'):
+            m.server_version()
+    def test_api_redirect_cannot_change_host(self):
+        import urllib.error
+        from unittest.mock import MagicMock
+        opener=MagicMock()
+        opener.open.side_effect=urllib.error.HTTPError('https://north.example.org/api/public',302,'Redirect',{'Location':'https://other.example.org'},None)
+        with patch.object(m,'SERVER','https://north.example.org/api/public'),patch.object(m.urllib.request,'build_opener',return_value=opener),self.assertRaisesRegex(ValueError,'источник'):
+            m.fetch(m.SERVER)
+        self.assertEqual(opener.open.call_count,1)
+
+
 class InstallerTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name)

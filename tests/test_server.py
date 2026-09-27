@@ -234,6 +234,41 @@ class CoreTests(unittest.TestCase):
             server.main()
         manager.submit.assert_called_once_with('rollback')
 
+    def test_vanilla_install_skips_github_and_can_rollback_to_plus(self):
+        self.release('old')
+        settings=self.manager.config.load();settings['server']['mode']='vanilla'
+        server.atomic_json(self.manager.config.path,settings)
+        _, process, _=self.install_fixture()
+        with patch('server.fetch') as fetch, patch('server.subprocess.Popen',return_value=process), patch.object(self.manager,'probe',return_value='1.0.16') as probe, patch.object(self.manager,'start'), patch.object(self.manager,'wait_ready') as ready:
+            self.manager.install()
+        fetch.assert_not_called()
+        self.assertEqual(probe.call_args.args[1:],(None,None))
+        ready.assert_called_once_with('1.0.16',None)
+        self.assertEqual(self.manager.metadata()['mode'],'vanilla')
+        self.assertIsNone(self.manager.metadata()['mod'])
+        self.assertFalse((self.manager.active()/'BepInEx').exists())
+        with patch.object(self.manager,'start'):
+            self.manager.execute('rollback',{})
+        self.assertEqual(self.manager.state['active'],'old')
+        self.assertEqual(self.manager.metadata()['mod'],'0.10.2.0')
+
+    def test_vanilla_spawn_has_no_loader_even_with_inherited_environment(self):
+        self.release('plain')
+        server.atomic_json(self.manager.active()/'hearth.json',{'mode':'vanilla','game':'1.0.16','mod':None})
+        (self.manager.active()/'valheim_server.x86_64').touch()
+        with patch.dict(os.environ,LD_PRELOAD='unexpected.so',DOORSTOP_ENABLED='1'), patch('server.subprocess.Popen') as spawn:
+            self.manager.spawn(self.manager.active(),self.base/'saves',2466)
+        env=spawn.call_args.kwargs['env']
+        self.assertNotIn('LD_PRELOAD',env)
+        self.assertNotIn('DOORSTOP_ENABLED',env)
+        self.assertIn('2466',spawn.call_args.args[0])
+
+    def test_vanilla_probe_accepts_game_ready_without_mod(self):
+        process=MagicMock(stdout=io.StringIO('Valheim version: l-1.0.16\nGame server connected\n'))
+        process.poll.return_value=None
+        with patch.object(self.manager,'spawn',return_value=process), patch.object(self.manager,'halt'):
+            self.assertEqual(self.manager.probe(self.base,None,None),'1.0.16')
+
     def pending(self, digest):
         return {'token': 'test-approval', 'declared': '1.0.15', 'actual': '1.0.16',
                 'mod': '0.10.2.0', 'sha256': digest, 'expires': time.time() + 1800}
@@ -385,12 +420,29 @@ class HttpTests(unittest.TestCase):
         for path in ['/landing.js','/landing.css','/north.svg']:
             self.assertEqual(self.request('GET', path)[0], 200)
 
+    def test_custom_domain_and_vanilla_public_page(self):
+        data=self.http.RequestHandlerClass.manager.config.load()
+        data['landing'].update(site_url='https://north.example.org',title='North',address='north.example.org:2466',community_url='')
+        data['server']['mode']='vanilla'
+        manager=self.http.RequestHandlerClass.manager
+        with patch.object(manager.config,'load',return_value=data),patch.object(manager,'metadata',return_value={'game':'1.0.16','mod':None,'mode':'vanilla'}):
+            page=self.request('GET','/')[2].decode()
+            self.assertIn('rel="canonical" href="https://north.example.org/"',page)
+            self.assertIn('Ванильный сервер',page)
+            self.assertIn('<article data-plus hidden>',page)
+            self.assertNotIn('loki.ach-play.ru',page)
+            self.assertIn('https://north.example.org/sitemap.xml',self.request('GET','/robots.txt')[2].decode())
+            self.assertIn('<loc>https://north.example.org/</loc>',self.request('GET','/sitemap.xml')[2].decode())
+            self.assertEqual(json.loads(self.request('GET','/api/public')[2])['mode'],'vanilla')
+        with patch.object(manager.config,'load',return_value=data),patch.object(manager,'metadata',return_value={'game':'1.0.15','mod':'0.10.2.0'}):
+            self.assertEqual(json.loads(self.request('GET','/api/public')[2])['mode'],'plus')
+
     def test_public_api_exposes_only_approved_fields(self):
         with patch.object(server.Handler.manager, 'metadata', return_value={'game':'1.0.15','mod':'0.10.2.0','secret':'must-not-leak'}):
             status, _, raw = self.request('GET','/api/public')
         data = json.loads(raw)
         self.assertEqual(status,200)
-        self.assertEqual(set(data), {'title','description','address','community_url','running','players','game','mod','server_name'})
+        self.assertEqual(set(data), {'title','description','address','community_url','running','players','game','mod','server_name','mode','site_url','public_listing'})
         self.assertNotIn('must-not-leak', raw.decode())
         self.assertNotIn('password',raw.decode())
 
