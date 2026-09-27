@@ -25,7 +25,7 @@ import urllib.request
 from urllib.parse import urlsplit
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from configuration import Configuration, atomic_text
+from configuration import Configuration, atomic_text, game_ports, server_mode, listing_required
 
 BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
@@ -191,14 +191,17 @@ class Manager:
     def save_state(self):
         atomic_json(self.state_path, self.state)
 
-    def spawn(self, folder, save_dir, port, probe=False):
+    def spawn(self, folder, save_dir, port, probe=False, mode=None):
         env = os.environ.copy()
         # Do not pass the panel credential to the game process.
         env.pop('PANEL_PASSWORD', None)
-        env.update(SteamAppId='892970', DOORSTOP_ENABLED='1',
-                   DOORSTOP_TARGET_ASSEMBLY=str(folder / 'BepInEx/core/BepInEx.Preloader.dll'),
-                   LD_LIBRARY_PATH=f'{folder}/linux64:{folder}/doorstop_libs',
-                   LD_PRELOAD=str(folder / 'doorstop_libs/libdoorstop_x64.so'))
+        mode = mode or json.loads((folder / 'hearth.json').read_text()).get('mode', 'plus')
+        env.update(SteamAppId='892970', LD_LIBRARY_PATH=f'{folder}/linux64')
+        for key in ('LD_PRELOAD', 'DOORSTOP_ENABLED', 'DOORSTOP_TARGET_ASSEMBLY'):
+            env.pop(key, None)
+        if mode == 'plus':
+            env.update(DOORSTOP_ENABLED='1', DOORSTOP_TARGET_ASSEMBLY=str(folder / 'BepInEx/core/BepInEx.Preloader.dll'),
+                       LD_LIBRARY_PATH=f'{folder}/linux64:{folder}/doorstop_libs', LD_PRELOAD=str(folder / 'doorstop_libs/libdoorstop_x64.so'))
         exe = folder / 'valheim_server.x86_64'
         exe.chmod(exe.stat().st_mode | 0o111)
         args = ['-name','Hearth version probe','-world','VersionProbe','-password',secrets.token_hex(12),'-public','0'] if probe else self.config.launch_args()
@@ -223,7 +226,7 @@ class Manager:
             return
         folder = self.active()
         config = folder / 'BepInEx/config'
-        if not config.is_symlink():
+        if (self.metadata() or {}).get("mode", "plus") == "plus" and not config.is_symlink():
             if config.exists():
                 for source in config.rglob('*'):
                     dest = self.base / 'config' / source.relative_to(config)
@@ -233,7 +236,7 @@ class Manager:
                 shutil.rmtree(config)
             config.symlink_to(self.base / 'config', target_is_directory=True)
         self.startup = {}
-        self.proc = self.spawn(folder, self.base / 'saves', 2456)
+        self.proc = self.spawn(folder, self.base / 'saves', game_ports()[0])
         self.started = time.time()
         self.reader = threading.Thread(target=self.read_game, args=(self.proc,), daemon=True)
         self.reader.start()
@@ -262,7 +265,7 @@ class Manager:
         while time.monotonic() < deadline:
             if self.closing or not self.running() or self.startup.get('error'):
                 raise RuntimeError('Новый сервер остановился или сообщил ошибку загрузки: ' + str(self.startup))
-            if self.startup.get('ready') and self.startup.get('game') == game and self.startup.get('mod') == mod and self.startup.get('bepinex'):
+            if self.startup.get('ready') and self.startup.get('game') == game and (mod is None or self.startup.get('mod') == mod and self.startup.get('bepinex')):
                 stable_since = stable_since or time.monotonic()
                 if time.monotonic() - stable_since >= 5:
                     return
@@ -322,16 +325,21 @@ class Manager:
                 raise ValueError('Одобрение устарело. Снова проверьте обновление.')
             approval = pending.copy()
         self.compatibility = None  # One attempt only; never a permanent bypass.
-        self.job['message'] = 'Поиск последнего стабильного релиза Valheim Plus'
-        game, mod, release = self.latest_release()
-        self.say(f'Последний V+ {mod}; заявленная совместимость: Valheim {game}. Загружается текущий сервер Steam.')
-        asset = next((a for a in release.get('assets', []) if a['name'] == 'UnixServer.zip'), None)
-        if asset is None:
-            raise ValueError('В последнем релизе мода отсутствует UnixServer.zip')
-        digest = PINNED_SHA if mod == '0.10.2.0' else (asset.get('digest') or '').removeprefix('sha256:')
-        if not re.fullmatch('[a-f0-9]{64}', digest):
-            raise ValueError('У релиза отсутствует SHA-256; установка отменена')
-        release_id = f'{game}-{mod}-{secrets.token_hex(4)}'
+        mode = server_mode(self.config.load()['server']['mode'])
+        if approval and mode != 'plus':
+            raise ValueError('Режим изменился; повторите обновление без старого одобрения')
+        game = mod = digest = None
+        if mode == 'plus':
+            self.job['message'] = 'Поиск последнего стабильного релиза Valheim Plus'
+            game, mod, release = self.latest_release()
+            self.say(f'Последний V+ {mod}; заявленная совместимость: Valheim {game}. Загружается текущий сервер Steam.')
+            asset = next((a for a in release.get('assets', []) if a['name'] == 'UnixServer.zip'), None)
+            if asset is None:
+                raise ValueError('В последнем релизе мода отсутствует UnixServer.zip')
+            digest = PINNED_SHA if mod == '0.10.2.0' else (asset.get('digest') or '').removeprefix('sha256:')
+            if not re.fullmatch('[a-f0-9]{64}', digest):
+                raise ValueError('У релиза отсутствует SHA-256; установка отменена')
+        release_id = f'{mode}-{secrets.token_hex(8)}'
         stage = self.base / 'releases' / release_id
         stage.mkdir()
         installed = False
@@ -351,16 +359,17 @@ class Manager:
                         raise RuntimeError('SteamCMD завершился с ошибкой; см. лог')
                 finally:
                     timer.cancel()
-            self.job['message'] = 'Загрузка и проверка Valheim Plus'
-            archive = stage / 'mod.zip'
-            url = asset['browser_download_url']
-            if not url.startswith(f'https://github.com/Grantapher/ValheimPlus/releases/download/{mod}/'):
-                raise ValueError('Неожиданный адрес релиза')
-            fetch(url, archive)
-            if hashlib.sha256(archive.read_bytes()).hexdigest() != digest:
-                raise ValueError('SHA-256 мода не совпадает')
-            safe_unzip(archive, stage)
-            archive.unlink()
+            if mode == 'plus':
+                self.job['message'] = 'Загрузка и проверка Valheim Plus'
+                archive = stage / 'mod.zip'
+                url = asset['browser_download_url']
+                if not url.startswith(f'https://github.com/Grantapher/ValheimPlus/releases/download/{mod}/'):
+                    raise ValueError('Неожиданный адрес релиза')
+                fetch(url, archive)
+                if hashlib.sha256(archive.read_bytes()).hexdigest() != digest:
+                    raise ValueError('SHA-256 мода не совпадает')
+                safe_unzip(archive, stage)
+                archive.unlink()
             if self.closing:
                 raise RuntimeError('Установка отменена: контейнер останавливается')
             expected = game
@@ -369,16 +378,16 @@ class Manager:
                     raise ValueError('Состав обновления изменился. Нужно новое одобрение.')
                 expected = approval['actual']
             try:
-                self.probe(stage, expected, mod)
+                probed = self.probe(stage, expected, mod)
             except CompatibilityApprovalRequired as mismatch:
                 self.compatibility = {'token': secrets.token_urlsafe(32), 'declared': game,
                     'actual': mismatch.actual, 'mod': mod, 'sha256': digest, 'expires': time.time() + 1800}
                 self.store.event('update', f'Ожидает одобрения: Valheim {mismatch.actual}, V+ {mod}; автор указал {game}')
                 raise RuntimeError(f'Steam загрузил Valheim {mismatch.actual}, автор V+ {mod} указал {game}. Тестовый мир запустился. Одобрите эту пару во вкладке «Обновления». Рабочий сервер не изменён.') from None
-            actual = expected
+            actual = probed if mode == 'vanilla' else expected
             if self.closing:
                 raise RuntimeError('Установка отменена: контейнер останавливается')
-            atomic_json(stage / 'hearth.json', {'game': actual, 'mod': mod, 'mod_sha256': digest, 'installed': time.time(),
+            atomic_json(stage / 'hearth.json', {'mode': mode, 'game': actual, 'mod': mod, 'mod_sha256': digest, 'installed': time.time(),
                 'compatibility': {'declared': game, 'approved': bool(approval), 'approved_at': time.time() if approval else None}})
             if approval:
                 self.store.event('update', f'Администратор одобрил Valheim {actual} + V+ {mod}; заявлено {game}')
@@ -417,7 +426,7 @@ class Manager:
                 raise RuntimeError('Обновление не запустилось. ' + ('Выполнен автоматический откат.' if old else 'Процесс остановлен; предыдущего релиза нет.') + ' Причина: ' + str(error)) from error
             self.state['update_trial'] = False
             self.save_state()
-            self.store.event('update', f'Установлены Valheim {actual} и V+ {mod}; запуск подтверждён, предыдущий релиз сохранён')
+            self.store.event('update', f'Установлен Valheim {actual}, режим {mode}; запуск подтверждён, предыдущий релиз сохранён')
         finally:
             if not installed:
                 shutil.rmtree(stage)
@@ -425,7 +434,7 @@ class Manager:
     def probe(self, stage, game, mod):
         self.job['message'] = 'Проверка реальной версии на временном мире (до 180 секунд)'
         with tempfile.TemporaryDirectory(prefix='probe-', dir=self.base) as tmp:
-            p = self.spawn(stage, Path(tmp), 2466, probe=True)
+            p = self.spawn(stage, Path(tmp), 2476 if {2466, 2467}.intersection(game_ports()) else 2466, probe=True, mode='plus' if mod else 'vanilla')
             markers = {}
             done = threading.Event()
             def read():
@@ -439,10 +448,11 @@ class Manager:
             reader.start()
             try:
                 done.wait(180)
-                if p.poll() is not None or markers.get('error') or not markers.get('ready') or markers.get('mod') != mod or not markers.get('bepinex') or not VERSION.fullmatch(markers.get('game', '')):
+                if p.poll() is not None or markers.get('error') or not markers.get('ready') or (mod is not None and (markers.get('mod') != mod or not markers.get('bepinex'))) or not VERSION.fullmatch(markers.get('game', '')):
                     raise RuntimeError(f'Тестовый мир не прошёл проверку запуска: {markers}. Рабочий сервер не изменён.')
-                if markers['game'] != game:
+                if game is not None and markers['game'] != game:
                     raise CompatibilityApprovalRequired(markers['game'])
+                return markers['game']
             finally:
                 try:
                     self.halt(p)
@@ -558,6 +568,7 @@ class Manager:
             path, content = self.config.prepare(data)  # Detect external edits during shutdown.
             self.backup('pre-config')
             atomic_text(path, content)
+            self.compatibility = None
             self.secret_values.add(self.config.load()['server']['password'])
         except Exception:
             if was_running:
@@ -573,10 +584,10 @@ class Manager:
             try:
                 if self.running():
                     import a2s
-                    info = a2s.info(('127.0.0.1', 2457), timeout=2)
+                    info = a2s.info(('127.0.0.1', game_ports()[1]), timeout=2)
                     names = []
                     try:
-                        names = [p.name for p in a2s.players(('127.0.0.1', 2457), timeout=2) if p.name]
+                        names = [p.name for p in a2s.players(('127.0.0.1', game_ports()[1]), timeout=2) if p.name]
                     except Exception:
                         pass
                     now = time.time()
@@ -610,6 +621,7 @@ class Manager:
                 files.append({'path': str(p.relative_to(self.base / 'saves')), 'bytes': s.st_size, 'modified': s.st_mtime})
         backups = [{'name': p.name, 'bytes': p.stat().st_size} for p in sorted((self.base / 'backups').glob('*.tar.gz'), reverse=True)]
         return {**self.store.read(), 'running': self.running(), 'busy': self.busy,
+            'target_mode': self.config.load()['server']['mode'], 'site_url': self.config.load()['landing']['site_url'],
             'job': self.job, 'versions': self.metadata(), 'online': self.online,
             'compatibility': self.compatibility if self.compatibility and self.compatibility['expires'] > time.time() else None,
             'uptime': time.time() - self.started if self.running() else 0,
@@ -678,10 +690,11 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 shutil.copyfileobj(source, self.wfile)
             return
-        if self.path == '/robots.txt':
-            return self.reply(200, b'User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /health\nSitemap: https://loki.ach-play.ru/sitemap.xml\n', 'text/plain; charset=utf-8')
-        if self.path == '/sitemap.xml':
-            return self.reply(200, b'<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://loki.ach-play.ru/</loc></url></urlset>', 'application/xml; charset=utf-8')
+        if self.path in ('/robots.txt', '/sitemap.xml'):
+            site = self.manager.config.load()['landing']['site_url']
+            if self.path == '/robots.txt':
+                return self.reply(200, f'User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /health\nSitemap: {site}/sitemap.xml\n'.encode(), 'text/plain; charset=utf-8')
+            return self.reply(200, ('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>'+html.escape(site)+'/</loc></url></urlset>').encode(), 'application/xml; charset=utf-8')
         if self.path == '/health':
             return self.reply(200, {'panel': 'ok'})
         if self.path == '/api/public':
@@ -694,6 +707,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {'title':landing['title'] or config['server']['name'],
                 'server_name':self.manager.config.advertised_name(),
                 'description':landing['description'], 'address':landing['address'],
+                'public_listing':listing_required() or config['server']['public'], 'site_url':landing['site_url'], 'mode':versions.get('mode', 'plus' if versions else config['server']['mode']),
                 'community_url':landing['community_url'], 'running':running,
                 'players':online['count'] if fresh else None,
                 'game':versions.get('game'), 'mod':versions.get('mod')})
@@ -703,12 +717,17 @@ class Handler(BaseHTTPRequestHandler):
             if name == 'landing.html':
                 config = self.manager.config.load()
                 landing = config['landing']
-                values = {'SITE_TITLE':landing['title'] or config['server']['name'],
+                versions = self.manager.metadata() or {}
+                mode = versions.get('mode', 'plus' if versions else config['server']['mode'])
+                values = {'SITE_URL':landing['site_url'], 'MODE_LABEL':'Valheim Plus' if mode == 'plus' else 'Ванильный сервер',
+                    'LISTING_HIDDEN':'' if listing_required() or config['server']['public'] else 'hidden',
+                    'PLUS_HIDDEN':'' if mode == 'plus' else 'hidden', 'VANILLA_HIDDEN':'hidden' if mode == 'plus' else '',
+                    'SITE_TITLE':landing['title'] or config['server']['name'],
                     'SITE_DESCRIPTION':landing['description'],
                     'SERVER_ADDRESS':landing['address'] or 'Адрес скоро появится',
                     'LISTING_NAME':self.manager.config.advertised_name()}
                 template = (Path(__file__).parent / 'static' / name).read_text(encoding='utf-8-sig')
-                body = re.sub(r'\{\{(SITE_TITLE|SITE_DESCRIPTION|SERVER_ADDRESS|LISTING_NAME)\}\}', lambda m: html.escape(values[m[1]], quote=True), template)
+                body = re.sub(r'\{\{(SITE_TITLE|SITE_DESCRIPTION|SERVER_ADDRESS|LISTING_NAME|SITE_URL|MODE_LABEL|PLUS_HIDDEN|VANILLA_HIDDEN|LISTING_HIDDEN)\}\}', lambda m: html.escape(values[m[1]], quote=True), template)
                 return self.reply(200, body.encode(), mime)
             return self.reply(200, (Path(__file__).parent / 'static' / name).read_bytes(), mime)
         session = self.session()
@@ -802,6 +821,7 @@ def main():
         raise SystemExit('Пароль игры не должен входить в название сервера')
     if not re.fullmatch(r'[\w -]{1,80}', os.getenv('WORLD_NAME', 'North')):
         raise SystemExit('WORLD_NAME: используйте буквы, цифры, пробел, дефис или подчёркивание')
+    game_ports()
     os.umask(0o077)
     manager = Manager()
     Handler.manager, Handler.password = manager, password

@@ -6,6 +6,9 @@ int count=0;
 void Check(bool value,string name){if(!value)throw new Exception(name);Console.WriteLine("PASS "+name);count++;}
 void Reject(Action action,string name){try{action();}catch(Exception e) when(e is IOException or InvalidDataException or ArgumentException){Check(true,name);return;}throw new Exception("Expected rejection: "+name);}
 byte[] Utf(string s)=>Encoding.UTF8.GetBytes(s);
+Check(SourceClient.Endpoint("https://north.example.org/")=="https://north.example.org/api/public","custom server origin");
+foreach(var url in new[]{"http://north.example.org","https://u:p@north.example.org","https://north.example.org/path","https://north.example.org?x=1","https://north.example.org:8443"})Reject(()=>SourceClient.Endpoint(url),"invalid server origin "+url);
+Reject(()=>SourceClient.ParseServer(Utf("{\"mode\":\"vanilla\",\"game\":\"1.0.16\",\"mod\":null}")),"vanilla never installs V+");
 string root=Path.Combine(Path.GetTempPath(),"LokiInstallerTests-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(root);
 string game=Path.Combine(root,"steamapps","common","Valheim");Directory.CreateDirectory(Path.Combine(game,"valheim_Data"));File.WriteAllText(Path.Combine(game,"valheim.exe"),"fake game — never executed");
 File.WriteAllText(Path.Combine(root,"steamapps","appmanifest_892970.acf"),"\"AppState\" { \"appid\" \"892970\" \"installdir\" \"Valheim\" }");

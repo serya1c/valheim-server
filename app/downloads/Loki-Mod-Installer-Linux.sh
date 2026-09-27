@@ -156,13 +156,22 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs): return None
 
 
+def server_endpoint(website):
+    u = urllib.parse.urlsplit(website)
+    if u.scheme != 'https' or not u.hostname or u.port not in {None,443} or u.username or u.password or u.path not in {'','/'} or u.query or u.fragment or '\\' in website or any(c.isspace() for c in website):
+        raise ValueError('Укажите HTTPS-адрес сайта сервера без пути, параметров и пароля (порт 443).')
+    return website.rstrip('/') + '/api/public'
+
+
 def fetch(url, limit=1024*1024):
-    hosts = {'loki.ach-play.ru','api.github.com','github.com','release-assets.githubusercontent.com','objects.githubusercontent.com'}
+    hosts = {'api.github.com','github.com','release-assets.githubusercontent.com','objects.githubusercontent.com'}
     opener = urllib.request.build_opener(NoRedirect())
-    original = urllib.parse.urlsplit(url).hostname
+    is_server = url == SERVER
+    original = urllib.parse.urlsplit(SERVER).netloc
+    if is_server: hosts = {urllib.parse.urlsplit(SERVER).hostname}
     for _ in range(6):
         u = urllib.parse.urlsplit(url)
-        if u.scheme != 'https' or u.hostname not in hosts or u.port not in {None,443} or u.username or u.password or (original == 'loki.ach-play.ru' and u.hostname != original):
+        if u.scheme != 'https' or u.hostname not in hosts or u.port not in {None,443} or u.username or u.password or (is_server and u.netloc != original):
             raise ValueError('Неожиданный источник загрузки.')
         try:
             response = opener.open(urllib.request.Request(url, headers={'User-Agent':'Loki-Proton-Installer/1.0','Cache-Control':'no-cache'}), timeout=30)
@@ -182,9 +191,10 @@ def fetch(url, limit=1024*1024):
 
 def server_version():
     data = json.loads(fetch(SERVER))
+    if data.get('mode') == 'vanilla': raise ValueError('Это ванильный сервер. V+ не требуется; используйте клиент без модов.')
     game, mod = data.get('game'), data.get('mod')
     if not all(isinstance(v,str) and VERSION.fullmatch(v) for v in [game,mod]):
-        raise ValueError('Loki ещё не сообщает установленные версии. Повторите позже.')
+        raise ValueError('Сервер ещё не сообщает установленные версии. Повторите позже.')
     return game, mod
 
 
@@ -352,11 +362,14 @@ def launch_help():
 
 
 def main(argv=None):
+    global SERVER
     parser=argparse.ArgumentParser(description='Установщик Loki для Steam / Proton (Linux x86_64). Без sudo.')
+    parser.add_argument('--server',default='https://loki.ach-play.ru',help='HTTPS-адрес сайта нужного сервера')
     parser.add_argument('--game',help='Папка Windows-версии Valheim')
     parser.add_argument('--restore',action='store_true',help='Восстановить файлы до последней установки')
     parser.add_argument('--launch-options',action='store_true',help='Показать настройки Proton')
     args=parser.parse_args(argv)
+    SERVER=server_endpoint(args.server)
     if args.launch_options: launch_help(); return 0
     if platform.system()!='Linux' or platform.machine().lower() not in {'x86_64','amd64'}:
         raise ValueError('Нужен Linux x86_64. Для Windows есть отдельный EXE.')
@@ -377,7 +390,7 @@ def main(argv=None):
         print('Параметры запуска Steam не менялись. Если BepInEx удалён, уберите только winhttp из WINEDLLOVERRIDES.')
         return 0
     version=server_version()
-    print(f'На Loki: Valheim {version[0]}, V+ {version[1]}. Игру обновляет Steam.')
+    print(f'На {args.server}: Valheim {version[0]}, V+ {version[1]}. Игру обновляет Steam.')
     print('Папка: '+str(game))
     print('Существующие конфигурации сохранятся; заменяемые файлы будут скопированы в резервную копию.')
     if input('Установить мод? [да/нет]: ').strip().lower() not in {'да','yes','y'}: return 0
@@ -390,7 +403,7 @@ def main(argv=None):
     print('Файлы мода установлены. Резервная копия: '+str(backup))
     launch_help()
     print('\nПосле настройки запустите игру через Steam. В BepInEx/LogOutput.log должна появиться загрузка Valheim Plus.')
-    print('Подключение: loki.ach-play.ru:2456 · https://loki.ach-play.ru/')
+    print('Адрес подключения и сообщество: '+args.server)
     return 0
 
 

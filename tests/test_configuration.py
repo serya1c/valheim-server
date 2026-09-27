@@ -64,7 +64,7 @@ class ConfigTests(unittest.TestCase):
             self.manager.configure(self.request('landing',values))
             stop.assert_not_called()
             start.assert_not_called()
-        self.assertEqual(Configuration(self.base).load()['landing'],values)
+        self.assertEqual(Configuration(self.base).load()['landing'],{**values, 'site_url':'https://loki.ach-play.ru'})
         self.assertTrue((self.base/'config/hearth-settings.previous.json').is_file())
 
     def test_landing_rejects_unsafe_links_and_invalid_addresses(self):
@@ -88,7 +88,7 @@ class ConfigTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.base = Path(self.tmp.name)
-        self.env = patch.dict(os.environ, SERVER_PASSWORD='test-game-password', SERVER_NAME='Test server', WORLD_NAME='North', REQUIRE_PUBLIC_LISTING='0')
+        self.env = patch.dict(os.environ, SERVER_PASSWORD='test-game-password', SERVER_NAME='Test server', WORLD_NAME='North', REQUIRE_PUBLIC_LISTING='0', SERVER_PUBLIC='1')
         self.env.start()
         self.manager = Manager(self.base)
         self.config = self.manager.config
@@ -105,6 +105,43 @@ class ConfigTests(unittest.TestCase):
     def request(self, scope, values, restart=False):
         return dict(scope=scope, values=values, restart=restart, revision=self.config.revision())
 
+    def test_new_domain_updates_listing_and_persists(self):
+        self.manager.configure(self.request('landing', {'site_url':'https://north.example.org/'}))
+        self.assertEqual(self.config.load()['landing']['site_url'], 'https://north.example.org')
+        self.assertIn('https://north.example.org', self.config.advertised_name())
+        self.assertNotIn('loki.ach-play.ru', self.config.advertised_name())
+        self.manager.configure(self.request('server', {'add_site':False}))
+        self.assertEqual(self.config.advertised_name(), 'Test server')
+
+    def test_site_url_rejects_paths_credentials_and_injection(self):
+        for url in ['https://user:password@site.org', 'https://site.org/path', 'https://site.org?x=1', 'https://site.org/#x', 'https://site.org:99999', 'https://site.org/\\bad', 'https://site.org;whoami', 'javascript:alert(1)', 'https://site.org\nX-Header: bad']:
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                self.config.prepare(self.request('landing', {'site_url':url}))
+
+    def test_vanilla_selection_keeps_mod_config_but_disables_editing(self):
+        original=self.mod.read_bytes()
+        self.manager.configure(self.request('server', {'mode':'vanilla'}))
+        self.assertEqual(self.config.load()['server']['mode'], 'vanilla')
+        self.assertFalse(self.config.view()['mod']['available'])
+        self.assertEqual(self.config.view()['mod']['entries'], [])
+        with self.assertRaises(ValueError):
+            self.config.prepare(self.request('mod', {'Server/maxPlayers':'20'}))
+        self.assertEqual(self.mod.read_bytes(), original)
+
+    def test_legacy_configuration_stays_plus_despite_changed_env(self):
+        data=self.config.load();data['server'].pop('mode');data['server'].pop('add_site')
+        atomic_text(self.config.path,json.dumps(data))
+        with patch.dict(os.environ, SERVER_MODE='vanilla'):
+            self.assertEqual(self.config.load()['server']['mode'], 'plus')
+
+    def test_first_install_accepts_profile_env(self):
+        with patch.dict(os.environ,SERVER_MODE='vanilla',SITE_URL='https://other.example',SERVER_ADDRESS='other.example:2466',GAME_PORT='2466',GAME_QUERY_PORT='2467'):
+            self.assertEqual(self.config.load()['server']['mode'], 'vanilla')
+            self.assertEqual(self.config.view()['ports'], {'game':2466,'query':2467})
+            self.assertEqual(self.config.load()['landing']['site_url'], 'https://other.example')
+        with patch.dict(os.environ,GAME_PORT='2466',GAME_QUERY_PORT='2457'), self.assertRaises(ValueError):
+            self.config.view()
+
     def test_password_not_exposed(self):
         view = self.config.view()
         self.assertTrue(view['server']['password_set'])
@@ -117,7 +154,7 @@ class ConfigTests(unittest.TestCase):
             c = Configuration(self.base)
             self.assertEqual(c.load()['server']['name'], 'Русский сервер')
             self.assertEqual(c.load()['server']['password'],'test-game-password')
-            self.assertIn('Русский сервер',c.launch_args())
+            self.assertTrue(c.advertised_name().startswith('Русский сервер'))
 
     def test_password_change_is_used_and_redacted(self):
         self.manager.configure(self.request('server', {'password':'new-password-777'}))
