@@ -4,3 +4,7 @@
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.button{transition:none}.button:hover{transform:none}}
 
 .steps a.installer-download{display:inline-flex;margin:12px 0;color:#152020;font-size:14px;padding:14px 18px;max-width:100%;box-sizing:border-box}
+
+.steps a.installer-download.outline{color:var(--amber,#e1b276)}
+.faq-list pre{max-width:100%;overflow-x:auto;padding:14px;background:#101a1a;font-size:13px;color:#ead5b2}
+#proton-guide{scroll-margin-top:24px}

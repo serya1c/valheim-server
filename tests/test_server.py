@@ -301,6 +301,18 @@ class HttpTests(unittest.TestCase):
         for path in ['/downloads/../server.py', '/downloads/server.py', '/downloads/%2e%2e/server.py']:
             self.assertNotEqual(self.request('GET', path)[0], 200)
 
+    def test_linux_installer_download_and_instructions(self):
+        status, headers, raw = self.request('GET', '/downloads/Loki-Mod-Installer-Linux.sh')
+        self.assertEqual(status, 200)
+        self.assertTrue(raw.startswith(b'#!/bin/sh\n'))
+        self.assertNotIn(b'\r', raw)
+        self.assertIn('attachment;', headers['Content-Disposition'])
+        digest = self.request('GET', '/downloads/Loki-Mod-Installer-Linux.sh.sha256')[2].decode().split()[0]
+        self.assertEqual(hashlib.sha256(raw).hexdigest(), digest)
+        html = self.request('GET', '/')[2]
+        self.assertIn(b'href="/downloads/Loki-Mod-Installer-Linux.sh"', html)
+        self.assertIn(b'WINEDLLOVERRIDES="winhttp=n,b" %command%', html)
+
     def test_public_online_does_not_expose_names_or_stale_counts(self):
         manager = server.Handler.manager
         with patch.object(manager,'running',return_value=True), patch.object(manager,'online',{'count':2,'names':['private-player'],'at':time.time()}):

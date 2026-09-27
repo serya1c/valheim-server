@@ -582,7 +582,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.path = urlsplit(self.path).path
-        if self.path in {'/downloads/Loki-Mod-Installer.exe', '/downloads/Loki-Mod-Installer.exe.sha256'}:
+        if self.path in {'/downloads/Loki-Mod-Installer.exe', '/downloads/Loki-Mod-Installer.exe.sha256',
+                         '/downloads/Loki-Mod-Installer-Linux.sh', '/downloads/Loki-Mod-Installer-Linux.sh.sha256'}:
             name = self.path.rsplit('/', 1)[1]
             path = Path(__file__).parent / 'downloads' / name
             if not path.is_file():
