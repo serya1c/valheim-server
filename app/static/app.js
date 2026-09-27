@@ -1,5 +1,5 @@
 'use strict';
-let csrf = '', polling = false;
+let csrf = '', polling = false, pendingApproval = null;
 const $ = id => document.getElementById(id);
 const fmtTime = ts => ts ? new Date(ts * 1000).toLocaleString('ru-RU') : '—';
 const bytes = n => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' ГБ' : (n / 1048576).toFixed(1) + ' МБ';
@@ -32,6 +32,7 @@ function confirmAction(message) {
 }
 async function action(name, data = {}) {
   const prompts = {stop:'Остановить сервер? Игроки будут отключены. Мир сохранится перед выходом.',restart:'Перезапустить сервер? Текущие подключения будут закрыты.',backup:'Сервер остановится для согласованной копии мира, затем запустится снова, если работал.',install:'Скачать последние стабильные версии сервера и мода и проверить их совместимость? После проверки сервер остановится для резервной копии и переключения.',restore:'Заменить текущий мир выбранной копией? Более поздний прогресс будет потерян. Текущий мир предварительно сохранится отдельно.',rollback:'Вернуть предыдущий сервер, мод, конфигурацию и мир до обновления? Прогресс после обновления останется только в отдельной резервной копии.'};
+  if (data.approval_token) prompts.install = `Одобрить Valheim ${pendingApproval?.actual} + V+ ${pendingApproval?.mod}? Автор мода указал Valheim ${pendingApproval?.declared}. Сервер повторит проверку, сохранит мир и настройки и попробует обновиться. При неудачном запуске будет предпринят автоматический откат.`;
   if (prompts[name] && !await confirmAction(prompts[name])) return;
   try { await api('/api/action', {action:name,...data}); await refresh(); }
   catch(e) { $('job').textContent = e.message; $('job').className = 'notice error'; }
@@ -55,6 +56,10 @@ async function refresh() {
     $('job').className = 'notice' + (s.job.state === 'error' ? ' error' : '');
     document.querySelectorAll('[data-action], #update-form button').forEach(b => b.disabled = s.busy);
     $('rollback').disabled = s.busy || !s.rollback;
+    pendingApproval = s.compatibility;
+    $('compatibility-approval').hidden = !pendingApproval;
+    $('approve-update').disabled = s.busy || !pendingApproval;
+    if (pendingApproval) $('compatibility-details').textContent = `Steam: Valheim ${pendingApproval.actual}. Мод: V+ ${pendingApproval.mod}. Заявлено автором: Valheim ${pendingApproval.declared}. Одобрение доступно до ${fmtTime(pendingApproval.expires)}; после перезапуска панели проверку нужно повторить.`;
     table('players-body', s.players, (tr,p) => { cell(tr, (s.online?.names.includes(p.name)?'● ':'') + p.name); cell(tr,p.joins); cell(tr,duration(p.seconds)); cell(tr,fmtTime(p.last_seen)); },4);
     const kinds = {system:'Система',connection:'Подключение',action:'Действие',update:'Обновление',error:'Ошибка',backup:'Копия',restore:'Восстановление',config:'Настройки'};
     table('events-body', s.events, (tr,e) => { cell(tr,fmtTime(e.ts)); cell(tr,kinds[e.kind] || e.kind); cell(tr,e.message); },3);
@@ -77,5 +82,6 @@ async function refresh() {
 $('login-form').addEventListener('submit', async e=>{e.preventDefault();try { const s=await api('/api/login',{password:$('password').value});csrf=s.csrf;$('password').value='';$('login-error').textContent='';showDashboard();await refresh(); }catch(err){$('login-error').textContent=err.message;}});
 $('logout').onclick=async()=>{try{await api('/api/logout',{});}finally{showLogin();}};
 document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>action(b.dataset.action));
+$('approve-update').onclick=()=>{if(pendingApproval) action('install',{approval_token:pendingApproval.token});};
 $('update-form').onsubmit=e=>{e.preventDefault();action('install');};
 (async()=>{try{const s=await api('/api/session');csrf=s.csrf;showDashboard();await refresh();}catch{}setInterval(refresh,5000);})();

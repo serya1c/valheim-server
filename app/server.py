@@ -31,6 +31,30 @@ BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
 VERSION = re.compile(r'\d+\.\d+\.\d+(?:\.\d+)?')
 GAME_LOG_VERSION = re.compile(r'Valheim version:\s*(?:[A-Za-z]-)?(\d+\.\d+\.\d+)')
+STARTUP_ERROR = re.compile(r'HarmonyException|MissingMethodException|MissingFieldException|TypeLoadException|\[(?:Error|Fatal)\s*:\s*(?:Valheim Plus|BepInEx)\s*\]', re.I)
+
+
+class CompatibilityApprovalRequired(RuntimeError):
+    def __init__(self, actual):
+        self.actual = actual
+        super().__init__('Нужно одобрение другой версии игры: ' + actual)
+
+
+def observe_startup(markers, line):
+    match = GAME_LOG_VERSION.search(line)
+    if match:
+        markers['game'] = match[1]
+    match = re.search(r'Loading \[Valheim Plus ([\d.]+)\]', line)
+    if match:
+        markers['mod'] = match[1]
+    if 'BepInEx 5.' in line:
+        markers['bepinex'] = True
+    if 'Game server connected' in line:
+        markers['ready'] = True
+    if STARTUP_ERROR.search(line):
+        markers['error'] = line[-1000:]
+
+
 JOIN = re.compile(r'Got character ZDOID from (.+?) :')
 CONNECTION = re.compile(r'Got connection|Got character ZDOID|Closing socket|Disconnected|New connection', re.I)
 ACTION_NAMES = {'start': 'Запуск', 'stop': 'Остановка', 'restart': 'Перезапуск',
@@ -123,6 +147,8 @@ class Manager:
         self.secret_values = {os.getenv('SERVER_PASSWORD'), os.getenv('PANEL_PASSWORD'), self.config.load()['server']['password']}
         self.lock = threading.Lock()
         self.proc = None
+        self.startup = {}
+        self.compatibility = None
         self.reader = None
         self.busy = False
         self.closing = False
@@ -206,6 +232,7 @@ class Manager:
                         shutil.copy2(source, dest)
                 shutil.rmtree(config)
             config.symlink_to(self.base / 'config', target_is_directory=True)
+        self.startup = {}
         self.proc = self.spawn(folder, self.base / 'saves', 2456)
         self.started = time.time()
         self.reader = threading.Thread(target=self.read_game, args=(self.proc,), daemon=True)
@@ -216,6 +243,8 @@ class Manager:
         for line in proc.stdout:
             line = line.rstrip()
             self.say(line)
+            if proc is self.proc:
+                observe_startup(self.startup, line)
             if CONNECTION.search(line):
                 self.store.event('connection', line)
             match = JOIN.search(line)
@@ -225,6 +254,20 @@ class Manager:
         self.last_names.clear()
         self.last_poll = None
         self.store.event('system', f'Процесс сервера завершён, код {proc.wait()}')
+
+    def wait_ready(self, game, mod, timeout=180):
+        self.job['message'] = 'Проверка запуска основного мира (до 180 секунд)'
+        deadline = time.monotonic() + timeout
+        stable_since = None
+        while time.monotonic() < deadline:
+            if self.closing or not self.running() or self.startup.get('error'):
+                raise RuntimeError('Новый сервер остановился или сообщил ошибку загрузки: ' + str(self.startup))
+            if self.startup.get('ready') and self.startup.get('game') == game and self.startup.get('mod') == mod and self.startup.get('bepinex'):
+                stable_since = stable_since or time.monotonic()
+                if time.monotonic() - stable_since >= 5:
+                    return
+            time.sleep(0.25)
+        raise RuntimeError('Основной мир не подтвердил готовность за отведённое время')
 
     def stop(self):
         if self.running():
@@ -271,7 +314,14 @@ class Manager:
             raise ValueError('Не удалось однозначно определить совместимость последнего мода с Valheim; рабочий сервер не изменён')
         return versions.pop(), mod, release
 
-    def install(self):
+    def install(self, approval_token=None):
+        approval = None
+        if approval_token is not None:
+            pending = self.compatibility
+            if not isinstance(approval_token, str) or not pending or pending['expires'] < time.time() or not hmac.compare_digest(approval_token, pending['token']):
+                raise ValueError('Одобрение устарело. Снова проверьте обновление.')
+            approval = pending.copy()
+        self.compatibility = None  # One attempt only; never a permanent bypass.
         self.job['message'] = 'Поиск последнего стабильного релиза Valheim Plus'
         game, mod, release = self.latest_release()
         self.say(f'Последний V+ {mod}; заявленная совместимость: Valheim {game}. Загружается текущий сервер Steam.')
@@ -313,10 +363,25 @@ class Manager:
             archive.unlink()
             if self.closing:
                 raise RuntimeError('Установка отменена: контейнер останавливается')
-            self.probe(stage, game, mod)
+            expected = game
+            if approval:
+                if (approval['declared'], approval['mod'], approval['sha256']) != (game, mod, digest):
+                    raise ValueError('Состав обновления изменился. Нужно новое одобрение.')
+                expected = approval['actual']
+            try:
+                self.probe(stage, expected, mod)
+            except CompatibilityApprovalRequired as mismatch:
+                self.compatibility = {'token': secrets.token_urlsafe(32), 'declared': game,
+                    'actual': mismatch.actual, 'mod': mod, 'sha256': digest, 'expires': time.time() + 1800}
+                self.store.event('update', f'Ожидает одобрения: Valheim {mismatch.actual}, V+ {mod}; автор указал {game}')
+                raise RuntimeError(f'Steam загрузил Valheim {mismatch.actual}, автор V+ {mod} указал {game}. Тестовый мир запустился. Одобрите эту пару во вкладке «Обновления». Рабочий сервер не изменён.') from None
+            actual = expected
             if self.closing:
                 raise RuntimeError('Установка отменена: контейнер останавливается')
-            atomic_json(stage / 'hearth.json', {'game': game, 'mod': mod, 'mod_sha256': digest, 'installed': time.time()})
+            atomic_json(stage / 'hearth.json', {'game': actual, 'mod': mod, 'mod_sha256': digest, 'installed': time.time(),
+                'compatibility': {'declared': game, 'approved': bool(approval), 'approved_at': time.time() if approval else None}})
+            if approval:
+                self.store.event('update', f'Администратор одобрил Valheim {actual} + V+ {mod}; заявлено {game}')
             was_running = self.running()
             self.stop()
             try:
@@ -327,7 +392,7 @@ class Manager:
                 raise
             old = self.state.get('active')
             old_state = self.state.copy()
-            self.state.update(active=release_id, previous=old, rollback_backup=snapshot)
+            self.state.update(active=release_id, previous=old, rollback_backup=snapshot, update_trial=bool(old))
             try:
                 self.save_state()
             except Exception:
@@ -336,8 +401,23 @@ class Manager:
                     self.start()
                 raise
             installed = True
-            self.start()
-            self.store.event('update', f'Установлены Valheim {game} и V+ {mod}; предыдущий релиз сохранён')
+            try:
+                self.start()
+                self.wait_ready(actual, mod)
+            except Exception as error:
+                self.say('Неудачный запуск обновления: ' + str(error))
+                try:
+                    if old:
+                        self.restore(snapshot, rollback=True)
+                        self.store.event('update', 'Автоматический откат: возвращены прежний релиз, мир и конфигурация')
+                    else:
+                        self.stop()
+                except Exception as recovery_error:
+                    raise RuntimeError(f'Неудачный запуск; автоматический откат не завершён: {recovery_error}. Копия: {snapshot}') from error
+                raise RuntimeError('Обновление не запустилось. ' + ('Выполнен автоматический откат.' if old else 'Процесс остановлен; предыдущего релиза нет.') + ' Причина: ' + str(error)) from error
+            self.state['update_trial'] = False
+            self.save_state()
+            self.store.event('update', f'Установлены Valheim {actual} и V+ {mod}; запуск подтверждён, предыдущий релиз сохранён')
         finally:
             if not installed:
                 shutil.rmtree(stage)
@@ -351,23 +431,18 @@ class Manager:
             def read():
                 for line in p.stdout:
                     self.say('[probe] ' + line.rstrip())
-                    m = GAME_LOG_VERSION.search(line)
-                    if m:
-                        markers['game'] = m[1]
-                    m = re.search(r'Loading \[Valheim Plus ([\d.]+)\]', line)
-                    if m:
-                        markers['mod'] = m[1]
-                    if 'BepInEx 5.' in line:
-                        markers['bepinex'] = True
-                    if len(markers) == 3:
+                    observe_startup(markers, line)
+                    if markers.get('ready') or markers.get('error'):
                         done.set()
                 done.set()
             reader = threading.Thread(target=read, daemon=True)
             reader.start()
             try:
                 done.wait(180)
-                if markers.get('game') != game or markers.get('mod') != mod or not markers.get('bepinex'):
-                    raise RuntimeError(f'Последние сервер и мод не прошли проверку совместимости: {markers}. Ожидались Valheim {game} и V+ {mod}. Рабочий сервер не изменён; повторите обновление после выхода совместимого мода.')
+                if p.poll() is not None or markers.get('error') or not markers.get('ready') or markers.get('mod') != mod or not markers.get('bepinex') or not VERSION.fullmatch(markers.get('game', '')):
+                    raise RuntimeError(f'Тестовый мир не прошёл проверку запуска: {markers}. Рабочий сервер не изменён.')
+                if markers['game'] != game:
+                    raise CompatibilityApprovalRequired(markers['game'])
             finally:
                 try:
                     self.halt(p)
@@ -407,7 +482,7 @@ class Manager:
                     moved.append((folder, old))
                     (target / folder).rename(self.base / folder)
                 if rollback:
-                    self.state.update(active=release_id, previous=None, rollback_backup=None)
+                    self.state.update(active=release_id, previous=None, rollback_backup=None, update_trial=False)
                     self.save_state()
             except Exception:
                 for folder, old in reversed(moved):
@@ -455,7 +530,10 @@ class Manager:
                 if was_running:
                     self.start()
         elif action == 'install':
-            self.install()
+            if 'approval_token' in data:
+                self.install(data['approval_token'])
+            else:
+                self.install()
         elif action == 'restore':
             self.restore(data.get('name', ''))
         elif action == 'rollback':
@@ -533,6 +611,7 @@ class Manager:
         backups = [{'name': p.name, 'bytes': p.stat().st_size} for p in sorted((self.base / 'backups').glob('*.tar.gz'), reverse=True)]
         return {**self.store.read(), 'running': self.running(), 'busy': self.busy,
             'job': self.job, 'versions': self.metadata(), 'online': self.online,
+            'compatibility': self.compatibility if self.compatibility and self.compatibility['expires'] > time.time() else None,
             'uptime': time.time() - self.started if self.running() else 0,
             'world': self.config.load()['world_name'], 'files': files[:1000],
             'free_bytes': shutil.disk_usage(self.base).free, 'backups': backups,
@@ -741,7 +820,10 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
     threading.Thread(target=manager.poll, daemon=True).start()
-    if manager.state.get('active'):
+    if manager.state.get('update_trial') and manager.state.get('previous'):
+        manager.say('Обновление прервано до подтверждения запуска; восстанавливается прежний мир')
+        manager.submit('rollback')
+    elif manager.state.get('active'):
         manager.submit('start')
     else:
         manager.submit('install')

@@ -66,7 +66,13 @@
       <section id="updates"><div class="section-head"><h2>Обновления</h2><span class="eyebrow">ПОД ВАШИМ КОНТРОЛЕМ</span></div>
         <article class="card"><p>Сервер и мод устанавливаются согласованной парой. Перед переключением — проверка на временном мире и резервная копия. Предыдущий релиз остаётся для отката.</p>
           <form id="update-form" class="update-form"><button class="primary" type="submit">Установить последние версии ↗</button></form>
-          <p class="muted">Версии выбираются автоматически: текущий стабильный сервер Steam и последний стабильный релиз Valheim Plus от Grantapher вместе с BepInEx. Если мод ещё не поддерживает новую игру, обновление отменится до замены рабочего сервера. Игрокам тоже нужно обновить V+.</p>
+          <p class="muted">Версии выбираются автоматически: текущий стабильный сервер Steam и последний стабильный релиз Valheim Plus от Grantapher вместе с BepInEx. Если версия игры отличается от указанной автором мода, после успешного запуска тестового мира появится запрос одобрения. Игрокам тоже нужно обновить V+.</p>
+          <div id="compatibility-approval" class="notice" hidden>
+            <strong>Нужно ваше одобрение совместимости</strong>
+            <p id="compatibility-details"></p>
+            <p>Тестовый мир запустился, но автор мода не заявлял поддержку этой версии игры. Перед переключением сохраним мир и настройки. При ошибке запуска основного мира попробуем автоматически восстановить прежний релиз и копию. Вход игроков и работу игровых механик проверьте отдельно.</p>
+            <button id="approve-update" class="primary">Одобрить эту пару и обновить</button>
+          </div>
           <div class="toolbar"><button id="rollback" data-action="rollback">↶ Откатить сервер, мод и мир</button><a href="https://github.com/Grantapher/ValheimPlus/releases" target="_blank" rel="noreferrer">Релизы Grantapher ↗</a></div>
         </article>
       </section>
