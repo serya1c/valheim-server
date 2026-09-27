@@ -210,7 +210,7 @@ class CoreTests(unittest.TestCase):
         self.release('old')
         (self.base / 'saves/world.db').write_text('world before update')
         fetch, process, digest = self.install_fixture()
-        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe'), patch.object(self.manager, 'start') as start:
+        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe'), patch.object(self.manager, 'wait_ready'), patch.object(self.manager, 'start') as start:
             self.manager.install()
             start.assert_called_once()
         self.assertEqual(self.manager.state['previous'], 'old')
@@ -226,6 +226,114 @@ class CoreTests(unittest.TestCase):
                 self.manager.install()
             probe.assert_not_called()
         self.assertEqual(self.manager.state['active'], 'old')
+
+    def test_restart_during_trial_selects_rollback(self):
+        manager = MagicMock()
+        manager.state = {'active': 'new', 'previous': 'old', 'update_trial': True}
+        with patch.dict(os.environ, {'PANEL_PASSWORD': 'test-panel-password', 'SERVER_PASSWORD': 'test-game-password', 'WORLD_NAME': 'North'}), patch('server.Manager', return_value=manager), patch('server.ThreadingHTTPServer'), patch('server.threading.Thread'), patch('server.signal.signal'), patch('server.os.umask'):
+            server.main()
+        manager.submit.assert_called_once_with('rollback')
+
+    def pending(self, digest):
+        return {'token': 'test-approval', 'declared': '1.0.15', 'actual': '1.0.16',
+                'mod': '0.10.2.0', 'sha256': digest, 'expires': time.time() + 1800}
+
+    def test_mismatch_requests_approval_without_stopping_server(self):
+        self.release('old')
+        fetch, process, digest = self.install_fixture()
+        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe', side_effect=server.CompatibilityApprovalRequired('1.0.16')), patch.object(self.manager, 'stop') as stop:
+            with self.assertRaisesRegex(RuntimeError, 'Одобрите'):
+                self.manager.install()
+            stop.assert_not_called()
+        self.assertEqual(self.manager.compatibility['actual'], '1.0.16')
+        self.assertEqual(self.manager.compatibility['sha256'], digest)
+        self.assertEqual(self.manager.state['active'], 'old')
+        self.assertEqual([p.name for p in (self.base / 'releases').iterdir()], ['old'])
+
+    def test_approved_update_records_actual_version_and_consumes_approval(self):
+        self.release('old')
+        fetch, process, digest = self.install_fixture()
+        self.manager.compatibility = self.pending(digest)
+        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe') as probe, patch.object(self.manager, 'start'), patch.object(self.manager, 'wait_ready') as ready:
+            self.manager.execute('install', {'approval_token': 'test-approval'})
+        self.assertEqual(probe.call_args.args[1:], ('1.0.16', '0.10.2.0'))
+        ready.assert_called_once_with('1.0.16', '0.10.2.0')
+        self.assertEqual(self.manager.metadata()['game'], '1.0.16')
+        self.assertTrue(self.manager.metadata()['compatibility']['approved'])
+        self.assertFalse(self.manager.state['update_trial'])
+        self.assertIsNone(self.manager.compatibility)
+        with self.assertRaises(ValueError):
+            self.manager.install('test-approval')
+
+    def test_invalid_or_expired_approval_does_not_download(self):
+        for token, expires in [('wrong', time.time()+60), ('test-approval', 0), (True, time.time()+60)]:
+            self.manager.compatibility = self.pending('digest')
+            self.manager.compatibility['expires'] = expires
+            with patch('server.fetch') as fetch, self.assertRaises(ValueError):
+                self.manager.install(token)
+            fetch.assert_not_called()
+
+    def test_changed_archive_requires_new_approval(self):
+        self.release('old')
+        fetch, process, digest = self.install_fixture()
+        self.manager.compatibility = self.pending('different-digest')
+        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'stop') as stop:
+            with self.assertRaisesRegex(ValueError, 'Состав обновления'):
+                self.manager.install('test-approval')
+            stop.assert_not_called()
+        self.assertEqual(self.manager.state['active'], 'old')
+
+    def test_approved_update_still_checks_hash(self):
+        fetch, process, digest = self.install_fixture()
+        self.manager.compatibility = self.pending(digest)
+        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch.object(self.manager, 'probe') as probe:
+            with self.assertRaisesRegex(ValueError, 'SHA-256'):
+                self.manager.install('test-approval')
+            probe.assert_not_called()
+
+    def test_failed_world_start_restores_old_release_world_and_config(self):
+        self.release('old')
+        world = self.base / 'saves/world.db'
+        config = self.base / 'config/valheim_plus.cfg'
+        world.write_text('original world')
+        config.write_text('original config')
+        fetch, process, digest = self.install_fixture()
+        def failed_start(*args):
+            world.write_text('converted world')
+            config.write_text('changed config')
+            raise RuntimeError('world failed')
+        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe'), patch.object(self.manager, 'start'), patch.object(self.manager, 'wait_ready', side_effect=failed_start):
+            with self.assertRaisesRegex(RuntimeError, 'автоматический откат'):
+                self.manager.install()
+        self.assertEqual(self.manager.state['active'], 'old')
+        self.assertFalse(self.manager.state['update_trial'])
+        self.assertEqual(world.read_text(), 'original world')
+        self.assertEqual(config.read_text(), 'original config')
+        self.assertEqual(json.loads((self.base / 'state.json').read_text())['active'], 'old')
+        backups = list((self.base / 'backups').glob('*-pre-restore.tar.gz'))
+        self.assertEqual(len(backups), 1)
+        with tarfile.open(backups[0]) as archive:
+            self.assertEqual(archive.extractfile('saves/world.db').read(), b'converted world')
+
+    def test_probe_requires_ready_correct_mod_and_no_errors(self):
+        lines = 'Valheim version: l-1.0.16\nBepInEx 5.4.23\nLoading [Valheim Plus 0.10.2.0]\n'
+        for output, expected in [(lines, RuntimeError), (lines+'Game server connected\n', server.CompatibilityApprovalRequired), (lines+'HarmonyException: bad patch\nGame server connected\n', RuntimeError), (lines.replace('0.10.2.0', '0.10.1.0')+'Game server connected\n', RuntimeError)]:
+            process = MagicMock(stdout=io.StringIO(output))
+            process.poll.return_value = None
+            with patch.object(self.manager, 'spawn', return_value=process), patch.object(self.manager, 'halt'):
+                with self.assertRaises(expected) as caught:
+                    self.manager.probe(self.base, '1.0.15', '0.10.2.0')
+                if expected is RuntimeError:
+                    self.assertNotIsInstance(caught.exception, server.CompatibilityApprovalRequired)
+
+    def test_world_readiness_rejects_exit_errors_and_timeout(self):
+        with patch.object(self.manager, 'running', return_value=False), self.assertRaises(RuntimeError):
+            self.manager.wait_ready('1.0.16', '0.10.2.0')
+        self.manager.startup = {'error': 'MissingMethodException'}
+        with patch.object(self.manager, 'running', return_value=True), self.assertRaises(RuntimeError):
+            self.manager.wait_ready('1.0.16', '0.10.2.0')
+        with self.assertRaisesRegex(RuntimeError, 'готовность'):
+            self.manager.wait_ready('1.0.16', '0.10.2.0', timeout=0)
 
 
 class HttpTests(unittest.TestCase):
