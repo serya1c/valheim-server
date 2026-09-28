@@ -27,6 +27,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from configuration import Configuration, atomic_text, game_ports, server_mode, listing_required, default_world
 from panel import Panel, password_hash
+import world_transfer
 
 BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
@@ -61,7 +62,7 @@ CONNECTION = re.compile(r'Got connection|Got character ZDOID|Closing socket|Disc
 ACTION_NAMES = {'start': 'Запуск', 'stop': 'Остановка', 'restart': 'Перезапуск',
                 'backup': 'Резервная копия', 'scheduled': 'Плановая копия',
                 'install': 'Установка обновления', 'restore': 'Восстановление мира', 'rollback': 'Полный откат',
-                'configure':'Сохранение настроек'}
+                'configure':'Сохранение настроек', 'export_world':'Экспорт мира', 'import_world':'Импорт мира'}
 
 
 def atomic_json(path, value):
@@ -152,6 +153,7 @@ class Manager:
         self.proc = None
         self.startup = {}
         self.compatibility = None
+        self.pending_import = None
         self.reader = None
         self.busy = False
         self.closing = False
@@ -563,7 +565,7 @@ class Manager:
         def work():
             try:
                 self.execute(action, data or {})
-                self.job = {'state': 'done', 'message': 'Операция завершена'}
+                self.job = {'state': 'done', 'message': 'Мир импортирован. Проверьте настройки и запустите сервер.' if action == 'import_world' else 'Операция завершена'}
             except Exception as e:
                 self.say(str(e))
                 self.store.event('error', str(e))
@@ -600,6 +602,10 @@ class Manager:
             self.restore(data.get('name', ''))
         elif action == 'rollback':
             self.restore(self.state.get('rollback_backup') or '', rollback=True)
+        elif action == 'export_world':
+            world_transfer.export_world(self)
+        elif action == 'import_world':
+            world_transfer.import_world(self, data.get('token'))
         elif action == 'configure':
             self.configure(data)
         else:
@@ -702,6 +708,7 @@ class Manager:
             'uptime': time.time() - self.started if self.running() else 0,
             'world': self.config.load()['world_name'], 'files': files[:1000],
             'free_bytes': shutil.disk_usage(self.base).free, 'backups': backups,
+            'exports': [{'name':p.name,'bytes':p.stat().st_size} for p in sorted((self.base/'exports').glob('world-*.zip'),reverse=True)],
             'rollback': bool(self.state.get('previous')), 'logs': list(self.tail)[-180:]}
 
 
@@ -806,7 +813,7 @@ class Handler(BaseHTTPRequestHandler):
                 'community_url':landing['community_url'], 'running':running,
                 'players':online['count'] if fresh else None,
                 'game':versions.get('game'), 'mod':versions.get('mod')})
-        assets = {'/': ('landing.html', 'text/html; charset=utf-8'), '/admin': ('index.html', 'text/html; charset=utf-8'), '/admin/': ('index.html', 'text/html; charset=utf-8'), '/landing.css': ('landing.css', 'text/css; charset=utf-8'), '/landing.js': ('landing.js', 'text/javascript; charset=utf-8'), '/north.svg': ('north.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/settings.js': ('settings.js', 'text/javascript; charset=utf-8'), '/mod-ru.js': ('mod-ru.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
+        assets = {'/': ('landing.html', 'text/html; charset=utf-8'), '/admin': ('index.html', 'text/html; charset=utf-8'), '/admin/': ('index.html', 'text/html; charset=utf-8'), '/landing.css': ('landing.css', 'text/css; charset=utf-8'), '/landing.js': ('landing.js', 'text/javascript; charset=utf-8'), '/north.svg': ('north.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/transfer.js': ('transfer.js', 'text/javascript; charset=utf-8'), '/settings.js': ('settings.js', 'text/javascript; charset=utf-8'), '/mod-ru.js': ('mod-ru.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
         if self.path in assets:
             name, mime = assets[self.path]
             if name == 'landing.html':
@@ -837,6 +844,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, {**self.manager.config.view(), 'panel':self.manager.panel.view(), 'panel_revision':self.manager.panel.revision()})
             except ValueError as e:
                 return self.reply(400, {'error':str(e)})
+        if self.path.startswith('/api/world-export/'):
+            name = self.path.removeprefix('/api/world-export/')
+            if not re.fullmatch(r'world-[0-9-]+-[a-f0-9]{8}\.zip', name):
+                return self.reply(400, {'error':'Неверное имя экспорта'})
+            path = self.manager.base/'exports'/name
+            if not path.is_file():
+                return self.reply(404, {'error':'Экспорт не найден'})
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/zip')
+            self.send_header('Content-Length', str(path.stat().st_size))
+            self.send_header('Content-Disposition', f'attachment; filename="{name}"')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Robots-Tag', 'noindex, nofollow')
+            self.end_headers()
+            with path.open('rb') as source:shutil.copyfileobj(source,self.wfile)
+            return
         if self.path.startswith('/api/backup/'):
             name = self.path.removeprefix('/api/backup/')
             if not re.fullmatch(r'[a-zA-Z0-9.-]+\.tar\.gz', name):
@@ -855,7 +878,31 @@ class Handler(BaseHTTPRequestHandler):
             return
         return self.reply(404, {'error': 'Не найдено'})
 
+    def upload_world(self):
+        session = self.session()
+        if not self.manager.panel.configured or not session or self.headers.get('X-Hearth') != '1' or not hmac.compare_digest(self.headers.get('X-CSRF-Token',''), session['csrf']):
+            self.close_connection = True
+            return self.reply(403, {'error':'Войдите в панель и повторите загрузку'})
+        if self.headers.get('Content-Type') != 'application/zip':
+            self.close_connection = True
+            return self.reply(400, {'error':'Ожидается ZIP-архив экспорта Hearth'})
+        if self.manager.closing or not self.manager.lock.acquire(blocking=False):
+            self.close_connection = True
+            return self.reply(409, {'error':'Дождитесь завершения другой операции'})
+        try:
+            self.connection.settimeout(120)
+            result = world_transfer.stage_import(self.manager, self.rfile, int(self.headers.get('Content-Length','0')))
+            return self.reply(200,result)
+        except (ValueError, OSError) as e:
+            self.close_connection = True
+            return self.reply(400, {'error':str(e)})
+        finally:
+            self.manager.lock.release()
+            self.connection.settimeout(15)
+
     def do_POST(self):
+        if self.path == '/api/world-import':
+            return self.upload_world()
         # Non-simple header forces a same-origin request; no CORS is enabled.
         if self.headers.get('X-Hearth') != '1' or self.headers.get('Content-Type', '').split(';')[0] != 'application/json':
             return self.reply(403, {'error': 'Недопустимый запрос'})
@@ -908,7 +955,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, {}, cookie='session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
             if self.path == '/api/action':
                 action = data.get('action')
-                if action not in {'start', 'stop', 'restart', 'backup', 'install', 'restore', 'rollback', 'configure'}:
+                if action not in {'start', 'stop', 'restart', 'backup', 'install', 'restore', 'rollback', 'configure', 'export_world', 'import_world'}:
                     raise ValueError('Неизвестная операция')
                 self.manager.submit(action, data)
                 return self.reply(202, {'accepted': True})

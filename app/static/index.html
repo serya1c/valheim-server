@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script>
+  <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script><script defer src="/transfer.js"></script>
 </head>
 <body>
   <div id="login" class="login">
@@ -30,6 +30,14 @@
       </section>
       <section id="world"><div class="section-head"><h2>Мир и резервные копии</h2><span class="eyebrow">СОХРАНИТЬ ВАЖНОЕ</span></div>
         <p class="muted">Автоматические копии ждут пустого сервера. Копирование выполняется после остановки и сохранения мира. Ручная копия прервёт игру на время операции.</p>
+        <article class="card"><h3>Перенести мир на другой сервер</h3>
+          <p class="muted">Экспорт включает выбранный мир (.db и .fwl), его правила и конфиг Valheim Plus, если мир работает с V+. Пароли, адреса сайта и данные игроков панели не переносятся.</p>
+          <div class="toolbar"><button id="world-export">↓ Подготовить экспорт мира</button></div><div id="world-exports" class="file-list"></div>
+          <h3>Импортировать мир</h3><p class="tiny">ZIP-архив экспорта Hearth, до 1 ГиБ (до 2 ГиБ после распаковки). На обоих серверах должны совпадать версии игры, режим и версия V+. Архив сначала проверяется без остановки игры.</p>
+          <label>Архив мира<input id="world-upload" type="file" accept=".zip,application/zip"></label>
+          <div class="toolbar"><button id="world-inspect">Загрузить и проверить</button><button id="world-import" hidden>Импортировать проверенный мир</button></div>
+          <p id="world-transfer-status" class="muted" role="status"></p><p class="tiny">Перед импортом — остановка и резервная копия. Одноимённый мир будет заменён и выбран для запуска; другие миры сохранятся. Сервер останется остановленным. Конфиг V+ применяется ко всему серверу. ZIP с необработанными файлами игры и старые резервные копии сюда не подходят.</p>
+        </article>
         <div class="two-col"><article class="card"><h3>Последние файлы сохранений</h3><div id="world-files" class="file-list"></div><p class="tiny">Это состояние файлов. День, боссы, карта и содержимое мира не анализируются.</p></article><article class="card"><h3>Копии для восстановления</h3><div id="backups" class="file-list"></div><p class="tiny">Скачайте важные копии на другой диск. Том Docker не защищает от потери хоста.</p></article></div>
       </section>
       <section id="settings"><div class="section-head"><h2>Настройки</h2><button id="config-reload">Перечитать</button></div>
