@@ -165,6 +165,112 @@ class TransferTests(unittest.TestCase):
         with patch.object(self.manager,'backup',side_effect=OSError('full')),self.assertRaises(OSError):transfer.import_world(self.manager,preview['token'])
         self.assertEqual((self.folder/'North.db').read_bytes(),b'old-db')
 
+    def chunked_world(self):
+        directory=self.folder/'North';directory.mkdir(exist_ok=True)
+        files={'_main.6.db2':b'database', '_main.6.fwl2':b'metadata',
+               '_main.6.chunks':b'index', '_main.6.ok':b'ok',
+               '1e_20__1_1.chunk':b'first chunk', '00_00__0_4.chunk':b'second chunk'}
+        for name,data in files.items():(directory/name).write_bytes(data)
+        return directory,files
+
+    def test_chunked_plus_roundtrip_replaces_entire_directory(self):
+        self.set_mode('plus')
+        cfg=self.base/'config/valheim_plus.cfg';cfg.write_bytes(b'[Server]\nenabled=true\n')
+        directory,files=self.chunked_world()
+        sibling=self.folder/'North_backup_auto-20260928';sibling.mkdir();(sibling/'keep').write_bytes(b'backup')
+        other=self.folder/'Other';other.mkdir();(other/'keep').write_bytes(b'other')
+        path=self.export()
+        with zipfile.ZipFile(path) as z:
+            meta=json.loads(z.read('manifest.json'));self.assertEqual(meta['version'],2)
+            self.assertEqual(set(z.namelist()),{'manifest.json','valheim_plus.cfg'}|{'world/'+n for n in files})
+            for n,data in files.items():self.assertEqual(z.read('world/'+n),data)
+        (directory/'_main.99.db2').write_bytes(b'stale higher generation')
+        (directory/'20_20__1_99.chunk').write_bytes(b'stale chunk')
+        cfg.write_bytes(b'[Server]\nenabled=false\n')
+        preview=self.stage(path);transfer.import_world(self.manager,preview['token'])
+        self.assertEqual({p.name:p.read_bytes() for p in directory.iterdir()},files)
+        self.assertFalse((self.folder/'North.db').exists());self.assertFalse((self.folder/'North.fwl').exists())
+        self.assertEqual(cfg.read_bytes(),b'[Server]\nenabled=true\n')
+        self.assertTrue((sibling/'keep').exists());self.assertTrue((other/'keep').exists())
+        self.assertTrue(list((self.base/'backups').glob('*-pre-import.tar.gz')))
+        self.start.assert_not_called()
+
+    def test_legacy_import_removes_chunked_directory(self):
+        path=self.export();directory,_=self.chunked_world()
+        preview=self.stage(path);transfer.import_world(self.manager,preview['token'])
+        self.assertFalse(directory.exists())
+        self.assertEqual((self.folder/'North.db').read_bytes(),b'world-database')
+
+    def test_chunked_failure_restores_directory_legacy_files_and_config(self):
+        directory,_=self.chunked_world();path=self.export();preview=self.stage(path)
+        (directory/'_main.99.db2').write_bytes(b'existing world')
+        before={p.name:p.read_bytes() for p in directory.iterdir()}
+        config=self.manager.config.path.read_bytes();real=transfer.atomic_text
+        def fail(path,content):
+            if path==self.manager.config.path:raise OSError('disk full')
+            return real(path,content)
+        with patch.object(transfer,'atomic_text',side_effect=fail),self.assertRaises(OSError):
+            transfer.import_world(self.manager,preview['token'])
+        self.assertEqual({p.name:p.read_bytes() for p in directory.iterdir()},before)
+        self.assertEqual((self.folder/'North.db').read_bytes(),b'world-database')
+        self.assertEqual(self.manager.config.path.read_bytes(),config)
+
+    def test_incomplete_directory_does_not_fall_back_to_legacy(self):
+        directory,_=self.chunked_world();(directory/'_main.6.ok').unlink()
+        self.running.return_value=True
+        with self.assertRaises(ValueError):self.export()
+        self.start.assert_called_once()
+        self.assertFalse(list((self.base/'exports').glob('*.zip')))
+
+    def test_chunked_archive_rejects_unsafe_paths_mixed_layout_and_tampering(self):
+        self.chunked_world();path=self.export();original=path.read_bytes()
+        changes=[lambda f:f.update({'world/../escape.chunk':b'bad'}),
+                 lambda f:f.update({'world/nested/file.chunk':b'bad'}),
+                 lambda f:f.update({'world/evil.exe':b'bad'}),
+                 lambda f:f.update({'world.db':b'mixed'}),
+                 lambda f:f.pop('world/_main.6.ok'),
+                 lambda f:f.update({'world/1e_20__1_1.chunk':b'changed'})]
+        for change in changes:
+            with self.subTest(change=change):
+                path.write_bytes(original);self.rewrite(path,change);self.stop.reset_mock()
+                with self.assertRaises(ValueError):self.stage(path)
+                self.stop.assert_not_called()
+
+    def test_chunked_mod_write_failure_restores_world_and_mod(self):
+        self.set_mode('plus');cfg=self.base/'config/valheim_plus.cfg'
+        cfg.write_bytes(b'[Server]\nenabled=true\n')
+        directory,_=self.chunked_world();path=self.export();preview=self.stage(path)
+        (directory/'1e_20__1_1.chunk').write_bytes(b'previous chunk')
+        cfg.write_bytes(b'[Server]\nenabled=false\n')
+        before={p.name:p.read_bytes() for p in directory.iterdir()};real=transfer.os.replace
+        def fail(source,destination):
+            if Path(source).name=='valheim_plus.cfg' and destination==cfg:raise OSError('write failed')
+            return real(source,destination)
+        with patch.object(transfer.os,'replace',side_effect=fail),self.assertRaises(OSError):
+            transfer.import_world(self.manager,preview['token'])
+        self.assertEqual({p.name:p.read_bytes() for p in directory.iterdir()},before)
+        self.assertEqual(cfg.read_bytes(),b'[Server]\nenabled=false\n')
+
+    def test_chunked_limits_and_duplicate_files_rejected(self):
+        self.chunked_world();path=self.export()
+        with patch.object(transfer,'MAX_FILES',2),self.assertRaises(ValueError):self.stage(path)
+        with zipfile.ZipFile(path,'a') as z:z.writestr('world/_main.6.ok',b'duplicate')
+        with self.assertRaises(ValueError):self.stage(path)
+
+    def test_chunked_symlink_member_rejected(self):
+        self.chunked_world();path=self.export()
+        with zipfile.ZipFile(path,'a') as z:
+            member=zipfile.ZipInfo('world/linked.chunk');member.create_system=3
+            member.external_attr=0o120777 << 16;z.writestr(member,'/etc/passwd')
+        with self.assertRaises(ValueError):self.stage(path)
+
+    def test_chunked_rejects_unknown_or_empty_source_file(self):
+        directory,_=self.chunked_world()
+        for name,data in [('unknown.txt',b'x'),('20_20__1_1.chunk',b'')]:
+            p=directory/name;p.write_bytes(data)
+            with self.assertRaises(ValueError):self.export()
+            p.unlink()
+
     def test_http_upload_requires_auth_csrf_and_serializes_operations(self):
         path=self.export();body=path.read_bytes()
         class Handler(server.Handler):
