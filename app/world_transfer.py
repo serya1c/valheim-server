@@ -14,12 +14,27 @@ from configuration import Configuration, atomic_text, world_name, default_world,
 
 MAX_UPLOAD = 1024 ** 3
 MAX_EXPANDED = 2 * MAX_UPLOAD
+MAX_FILES = 10000
+MAX_MANIFEST = 2 * 1024 * 1024
 MOD_NAMES = ('org.bepinex.plugins.valheim_plus.cfg', 'valheim_plus.cfg')
 
 
 def digest(path):
     with path.open('rb') as f:
         return hashlib.file_digest(f, 'sha256').hexdigest()
+
+
+def chunk_file(name):
+    return len(name) <= 128 and bool(re.fullmatch(r'_main\.[0-9]+\.(?:db2|fwl2|chunks|ok)|[A-Za-z0-9_-]+\.chunk', name))
+
+
+def validate_chunk_set(names):
+    names = set(names)
+    if not names or len(names) > MAX_FILES or not all(chunk_file(n) for n in names):
+        raise ValueError('Недопустимый состав папки мира')
+    generations = {n[:-3] for n in names if n.endswith('.ok')}
+    if not any(all(g + suffix in names for suffix in ('.db2', '.fwl2', '.chunks', '.ok')) for g in generations):
+        raise ValueError('В папке мира нет завершённого сохранения (.db2, .fwl2, .chunks, .ok)')
 
 
 def read_package(path, target):
@@ -29,15 +44,19 @@ def read_package(path, target):
             members = archive.infolist()
             names = [m.filename for m in members]
             allowed = {'manifest.json', 'world.db', 'world.fwl', 'valheim_plus.cfg'}
-            if len(names) != len(set(names)) or not set(names) <= allowed or not {'manifest.json','world.db','world.fwl'} <= set(names):
+            chunk_names = [n[6:] for n in names if n.startswith('world/') and chunk_file(n[6:])]
+            allowed.update('world/'+n for n in chunk_names)
+            if len(names) > MAX_FILES + 2 or len(names) != len(set(names)) or not set(names) <= allowed or 'manifest.json' not in names:
                 raise ValueError('Архив не является экспортом мира Hearth: неверный состав файлов')
             if sum(m.file_size for m in members) > MAX_EXPANDED:
                 raise ValueError('Распакованный мир превышает 2 ГиБ')
             for member in members:
                 kind = stat.S_IFMT(member.external_attr >> 16)
-                limit = 65536 if member.filename == 'manifest.json' else 2*1024*1024 if member.filename.endswith('.cfg') else MAX_EXPANDED
+                limit = MAX_MANIFEST if member.filename == 'manifest.json' else 2*1024*1024 if member.filename.endswith('.cfg') else MAX_EXPANDED
                 if kind not in (0, stat.S_IFREG) or member.flag_bits & 1 or not 0 < member.file_size <= limit:
                     raise ValueError('Недопустимый тип или размер файла в архиве')
+                if member.filename.startswith('world/'):
+                    (target/'world').mkdir(exist_ok=True)
                 with archive.open(member) as source, (target/member.filename).open('wb') as out:
                     remaining = member.file_size
                     while remaining:
@@ -49,8 +68,15 @@ def read_package(path, target):
                     if source.read(1):
                         raise ValueError('Неверный размер файла')
             meta = json.loads((target/'manifest.json').read_text(encoding='utf-8'))
-            if not isinstance(meta, dict) or meta.get('format') != 'hearth-world' or meta.get('version') != 1:
+            if not isinstance(meta, dict) or meta.get('format') != 'hearth-world' or meta.get('version') not in (1, 2):
                 raise ValueError('Неизвестный формат экспорта')
+            if meta['version'] == 1:
+                if chunk_names or not {'world.db', 'world.fwl'} <= set(names):
+                    raise ValueError('Архив не является экспортом мира Hearth: неверный состав файлов')
+            else:
+                if meta.get('layout') != 'directory' or {'world.db','world.fwl'} & set(names):
+                    raise ValueError('Архив не является экспортом мира Hearth: неверный состав файлов')
+                validate_chunk_set(chunk_names)
             world_name(meta.get('world'))
             if meta.get('mode') not in ('plus','vanilla') or not isinstance(meta.get('game'),str) or not re.fullmatch(r'\d+\.\d+\.\d+',meta['game']):
                 raise ValueError('Не указаны режим и версия игры')
@@ -98,7 +124,19 @@ def export_world(manager):
         settings = manager.config.load()
         name = world_name(settings['world_name'])
         folder = manager.base/'saves/worlds_local'
-        files = {f'world{suffix}':folder/(name+suffix) for suffix in ('.db','.fwl')}
+        directory = folder/name
+        if folder.is_symlink() or directory.is_symlink():
+            raise ValueError('Ссылки в пути мира не поддерживаются')
+        chunked = directory.exists()
+        if chunked:
+            if not directory.is_dir():
+                raise ValueError('Недопустимый состав папки мира')
+            entries = list(directory.iterdir())
+            validate_chunk_set(p.name for p in entries)
+            files = {'world/'+p.name:p for p in entries}
+        else:
+            files = {f'world{suffix}':folder/(name+suffix) for suffix in ('.db','.fwl')}
+
         mode = versions.get('mode','plus')
         if mode == 'plus':
             cfg = manager.config.mod_path()
@@ -108,7 +146,7 @@ def export_world(manager):
                 raise ValueError('Конфиг V+ пуст, повреждён или превышает 2 МиБ')
             files['valheim_plus.cfg'] = cfg
         if any(not p.is_file() or p.is_symlink() or p.stat().st_size == 0 for p in files.values()):
-            raise ValueError('Для экспорта нужны непустые .db и .fwl выбранного мира')
+            raise ValueError('Файлы выбранного мира отсутствуют, пусты или являются ссылками')
         size = sum(p.stat().st_size for p in files.values())
         if size > MAX_EXPANDED or shutil.disk_usage(manager.base).free < size + 64*1024*1024:
             raise ValueError('Мир превышает 2 ГиБ или недостаточно места для экспорта')
@@ -116,7 +154,10 @@ def export_world(manager):
         filename = 'world-'+time.strftime('%Y%m%d-%H%M%S')+'-'+secrets.token_hex(4)+'.zip'
         temporary = exports/(filename+'.tmp')
         try:
-            meta = {'format':'hearth-world','version':1,'world':name,'mode':mode,'game':versions['game'], 'mod':versions.get('mod'), 'created':time.time(), 'rules':settings['worlds'].get(name,default_world()), 'sha256':{n:digest(p) for n,p in files.items()}}
+            meta = {'format':'hearth-world','version':2 if chunked else 1,'world':name,'mode':mode,'game':versions['game'], 'mod':versions.get('mod'), 'created':time.time(), 'rules':settings['worlds'].get(name,default_world()), 'sha256':{n:digest(p) for n,p in files.items()}}
+            if chunked:meta['layout']='directory'
+            if len(json.dumps(meta,ensure_ascii=False).encode('utf-8')) > MAX_MANIFEST:
+                raise ValueError('Слишком много файлов для экспорта мира')
             with zipfile.ZipFile(temporary,'w',zipfile.ZIP_DEFLATED,compresslevel=3) as archive:
                 archive.writestr('manifest.json',json.dumps(meta,ensure_ascii=False))
                 for n,p in files.items():archive.write(p,n)
@@ -172,10 +213,14 @@ def import_world(manager, token):
         manager.stop()
         manager.backup('pre-import')
         folder=manager.base/'saves/worlds_local';folder.mkdir(exist_ok=True)
-        replacements={folder/(meta['world']+'.db'):target/'world.db',folder/(meta['world']+'.fwl'):target/'world.fwl',manager.config.path:None}
-        for suffix in ('.db.old','.fwl.old'):
-            stale=folder/(meta['world']+suffix)
-            if stale.exists():replacements[stale]=None
+        if folder.is_symlink():
+            raise ValueError('Ссылки в пути мира не поддерживаются')
+        directory=folder/meta['world']
+        replacements={directory:target/'world' if meta['version']==2 else None}
+        for suffix in ('.db','.fwl','.db.old','.fwl.old'):
+            destination=folder/(meta['world']+suffix)
+            replacements[destination]=target/('world'+suffix) if meta['version']==1 and suffix in ('.db','.fwl') else None
+        replacements[manager.config.path]=None
         if meta['mode']=='plus':
             # Keep the target's canonical filename; remove an alternate duplicate.
             cfg=manager.config.mod_path() or manager.base/'config'/MOD_NAMES[0]
@@ -183,19 +228,26 @@ def import_world(manager, token):
             for name in MOD_NAMES:
                 other=manager.base/'config'/name
                 if other != cfg and other.exists():replacements[other]=None
+        # Move the entire old directory aside; never merge generations or chunks.
+        # The full pre-import backup remains available if rollback itself fails.
+        for destination in replacements:
+            if destination.is_symlink():
+                raise ValueError('Ссылки в пути мира не поддерживаются')
         originals={}
         try:
             for i,(destination,source) in enumerate(replacements.items()):
                 if destination.exists():
-                    saved=target/('original-'+str(i));shutil.copy2(destination,saved);originals[destination]=saved
+                    saved=target/('original-'+str(i))
+                    os.replace(destination,saved)
+                    originals[destination]=saved
                 else:originals[destination]=None
                 if destination==manager.config.path:atomic_text(destination,content)
                 elif source:os.replace(source,destination)
-                else:destination.unlink()
         except Exception:
             for destination,saved in reversed(list(originals.items())):
-                if saved:os.replace(saved,destination)
+                if destination.is_dir():shutil.rmtree(destination)
                 else:destination.unlink(missing_ok=True)
+                if saved:os.replace(saved,destination)
             raise
     path.unlink(missing_ok=True)
     manager.pending_import=None
