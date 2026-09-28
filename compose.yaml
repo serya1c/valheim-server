@@ -7,7 +7,7 @@ services:
     stop_grace_period: 3m
     ports:
       - "2456-2457:2456-2457/udp"
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     volumes:
       - game:/data
     cap_drop: [ALL]

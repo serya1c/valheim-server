@@ -753,14 +753,6 @@ class Handler(BaseHTTPRequestHandler):
             s = self.sessions.get(token)
             return s if s and s['expires'] > time.time() else None
 
-    def local_setup(self):
-        try:
-            host = urlsplit('http://' + self.headers.get('Host', '')).hostname
-            return host in ('localhost', '127.0.0.1', '::1') and not any(
-                key.lower() == 'forwarded' or key.lower().startswith('x-forwarded-') for key in self.headers)
-        except ValueError:
-            return False
-
     def do_GET(self):
         self.path = urlsplit(self.path).path
         if self.path in ('/i18n.js','/i18n-catalog.js','/i18n.css'):
@@ -770,8 +762,6 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/health':
             return self.reply(200, {'panel': 'ok', 'configured': self.manager.panel.configured})
         if not self.manager.panel.configured:
-            if not self.local_setup():
-                return self.reply(503, {'error':'Первичная настройка доступна только через localhost:8080 (для удалённого хоста используйте SSH-туннель).'})
             if self.path == '/api/setup':
                 return self.reply(200, self.manager.setup_view())
             setup_assets = {'/':('setup.html','text/html'), '/admin':('setup.html','text/html'), '/admin/':('setup.html','text/html'), '/setup':('setup.html','text/html'), '/setup.js':('setup.js','text/javascript'), '/setup.css':('setup.css','text/css')}
@@ -921,8 +911,8 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/api/setup':
                 if self.manager.panel.configured:
                     return self.reply(409, {'error':'Первичная настройка уже завершена'})
-                if not self.local_setup() or not hmac.compare_digest(self.headers.get('X-Setup-Token', ''), self.manager.setup_token or ''):
-                    return self.reply(403, {'error':'Откройте мастер через localhost и обновите страницу'})
+                if not hmac.compare_digest(self.headers.get('X-Setup-Token', ''), self.manager.setup_token or ''):
+                    return self.reply(403, {'error':'Обновите страницу мастера и повторите попытку'})
                 self.manager.complete_setup(data)
                 self.manager.submit(self.manager.boot_action())
                 next_url = self.manager.config.load()['landing']['site_url'] + '/admin' if self.manager.panel.load()['cookie_secure'] else '/admin'

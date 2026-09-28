@@ -73,13 +73,23 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(self.request('GET','/health')[0],200)
         self.submit.assert_not_called()
 
-    def test_public_host_and_proxy_cannot_claim_setup(self):
-        for headers in [{'Host':'public.example.org'}, {'Host':'localhost:8080','X-Forwarded-For':'127.0.0.1'}, {'Host':'localhost','Forwarded':'for=127.0.0.1'}]:
-            with self.subTest(headers=headers):
-                self.assertEqual(self.request('GET','/api/setup',headers=headers)[0],503)
-                supplied={**self.headers(),**headers}
-                self.assertEqual(self.request('POST','/api/setup',self.body(),supplied)[0],403)
-        self.assertFalse(self.manager.panel.configured)
+    def assert_remote_setup(self, proxy_headers):
+        for path in ('/', '/setup.js', '/setup.css', '/api/setup'):
+            self.assertEqual(self.request('GET', path, headers=proxy_headers)[0], 200)
+        data = json.loads(self.request('GET', '/api/setup', headers=proxy_headers)[2])
+        headers = {'Content-Type':'application/json', 'X-Hearth':'1',
+                   'X-Setup-Token':data['csrf'], **proxy_headers}
+        self.assertEqual(self.request('POST', '/api/setup', self.body(), headers)[0], 201)
+        self.assertTrue(self.manager.panel.configured)
+        self.assertEqual(self.request('POST', '/api/setup', self.body(), headers)[0], 409)
+
+    def test_public_host_can_complete_setup(self):
+        self.assert_remote_setup({'Host':'public.example.org:8080'})
+
+    def test_reverse_proxy_can_complete_setup(self):
+        self.assert_remote_setup({'Host':'public.example.org',
+            'Forwarded':'for=203.0.113.5;proto=https;host=public.example.org',
+            'X-Forwarded-For':'203.0.113.5', 'X-Forwarded-Proto':'https'})
 
     def test_setup_requires_one_time_token(self):
         headers=self.headers();headers['X-Setup-Token']='wrong'
