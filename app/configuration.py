@@ -9,7 +9,7 @@ from pathlib import Path
 import re
 from urllib.parse import urlsplit
 
-LANDING_DEFAULTS = {'title':'Loki', 'address':'loki.ach-play.ru:2456', 'community_url':'http://discord.ach-play.ru',
+LANDING_DEFAULTS = {'description_en':'', 'title':'Loki', 'address':'loki.ach-play.ru:2456', 'community_url':'http://discord.ach-play.ru',
     'description':'Собери друзей у очага. Построй первый дом, подними паруса и отправляйся навстречу неизведанному. В этом мире найдётся место для твоей истории.'}
 PROJECT_URL = 'https://loki.ach-play.ru'
 LANDING_DEFAULTS['site_url'] = PROJECT_URL
@@ -281,7 +281,7 @@ class Configuration:
             if values.keys() - LANDING_DEFAULTS.keys():
                 raise ValueError('Неизвестный параметр лендинга')
             landing = {**settings['landing'], **values}
-            for key, limit in [('title',80),('description',600),('address',260),('community_url',500)]:
+            for key, limit in [('title',80),('description',600),('description_en',600),('address',260),('community_url',500)]:
                 landing[key] = clean_text(landing[key], 'Лендинг: '+key, maximum=limit).strip()
             landing['site_url'] = site_url(landing['site_url'])
             if settings['server']['password'] and settings['server']['password'].casefold() in landing['site_url'].casefold():

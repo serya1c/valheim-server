@@ -30,10 +30,10 @@ function renderMod(){
     if(e.kind==='bool'||e.options.length){control=document.createElement('select');optionList(control,e.kind==='bool'?{'false':'Нет','true':'Да'}:Object.fromEntries(e.options.map(v=>[v,modOption(v)])),e.value);}
     else{control=document.createElement('input');control.type=e.kind==='int'||e.kind==='float'?'number':'text';control.value=e.value;control.maxLength=2048;if(control.type==='number'){control.step=e.kind==='int'?'1':'any';if(e.min!==null)control.min=e.min;if(e.max!==null)control.max=e.max;}}
     control.setAttribute('aria-label',title+' ('+e.id+')');control.dataset.cfgId=e.id;control.dataset.kind=e.kind;label.append(control);
-    const description=modDescription(e), help=document.createElement('small');help.className='field-help';help.id='mod-help-'+e.id.replace(/[^a-zA-Z0-9_-]/g,'-');help.textContent=description;label.append(help);
+    const description=modDescription(e), help=document.createElement('small');help.className='field-help';help.id='mod-help-'+e.id.replace(/[^a-zA-Z0-9_-]/g,'-');help.textContent=description;help.dataset.i18nEn=e.description||'No description provided by the mod author. See the setting name and value limits below.';label.append(help);
     const limits=document.createElement('small');limits.className='field-limits';limits.id=help.id+'-limits';limits.textContent=modConstraints(e);label.append(limits);control.setAttribute('aria-describedby',help.id+' '+limits.id);
-    if(e.description){const source=document.createElement('details');source.className='mod-source';const summary=document.createElement('summary');summary.textContent='Комментарий автора (оригинал)';const text=document.createElement('p');text.textContent=e.description;source.append(summary,text);label.append(source);}
-    label.dataset.search=(title+' '+description+' '+e.id+' '+(MOD_SECTIONS_RU[e.section]||'')).toLowerCase();groups.get(e.section).grid.append(label);
+    if(e.description){const source=document.createElement('details');source.className='mod-source';const summary=document.createElement('summary');summary.textContent='Комментарий автора (оригинал)';const text=document.createElement('p');text.dataset.i18nSkip='';text.textContent=e.description;source.append(summary,text);label.append(source);}
+    label.dataset.search=(title+' '+description+' '+(e.description||'')+' '+I18n.t(title)+' '+e.id+' '+(MOD_SECTIONS_RU[e.section]||'')).toLowerCase();groups.get(e.section).grid.append(label);
   });
 }
 async function loadConfig(force=false){
@@ -42,7 +42,7 @@ async function loadConfig(force=false){
   try{
     configData=await api('/api/config');configDirty=false;
     for(const key of ['backup_hours','backup_keep'])$('panel-'+key).value=configData.panel[key];$('panel-cookie_secure').checked=configData.panel.cookie_secure;$('panel-password').value='';$('panel-current_password').value='';
-    for(const key of ['title','description','address','community_url','site_url'])$('landing-'+key).value=configData.landing[key];
+    for(const key of ['title','description','description_en','address','community_url','site_url'])$('landing-'+key).value=configData.landing[key];
     for(const key of ['name','saveinterval','backups','backupshort','backuplong'])$('cfg-'+key).value=configData.server[key];
     $('cfg-mode').value=configData.server.mode;$('cfg-add_site').checked=configData.server.add_site;
     $('ports-info').textContent=`UDP: ${configData.ports.game}–${configData.ports.query}. Публикация портов задаётся в Compose, применяется пересозданием контейнера. Другой копии нужны отдельные порты, имя проекта Compose и том данных.`;
@@ -54,7 +54,7 @@ async function loadConfig(force=false){
 }
 function currentConfigValues(){
   if(configTab==='panel')return {backup_hours:Number($('panel-backup_hours').value),backup_keep:Number($('panel-backup_keep').value),cookie_secure:$('panel-cookie_secure').checked,password:$('panel-password').value,current_password:$('panel-current_password').value};
-  if(configTab==='landing')return Object.fromEntries(['title','description','address','community_url','site_url'].map(k=>[k,$('landing-'+k).value]));
+  if(configTab==='landing')return Object.fromEntries(['title','description','description_en','address','community_url','site_url'].map(k=>[k,$('landing-'+k).value]));
   if(configTab==='server')return {mode:$('cfg-mode').value,add_site:$('cfg-add_site').checked,name:$('cfg-name').value,password:$('cfg-password').value,public:$('cfg-public').checked,...Object.fromEntries(['saveinterval','backups','backupshort','backuplong'].map(k=>[k,Number($('cfg-'+k).value)]))};
   if(configTab==='world')return {name:$('cfg-world-name').value.trim(),rules:{managed:$('cfg-world-managed').checked,preset:$('cfg-preset').value,modifiers:Object.fromEntries([...document.querySelectorAll('[data-modifier]')].map(e=>[e.dataset.modifier,e.value])),keys:[...document.querySelectorAll('[data-world-key]:checked')].map(e=>e.dataset.worldKey)}};
   return Object.fromEntries([...document.querySelectorAll('[data-cfg-id]')].map(e=>[e.dataset.cfgId,e.value]).filter(([id,value])=>configData.mod.entries.find(e=>e.id===id).value!==value));
@@ -83,7 +83,7 @@ $('settings-nav').addEventListener('click',()=>{if(!configData)loadConfig();});
 document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{switchConfigTab(b.dataset.tab);if(!configData)loadConfig();});
 $('cfg-world-managed').onchange=()=>{$('world-rules').disabled=!$('cfg-world-managed').checked;};
 $('cfg-world-name').onchange=()=>{if(configData){loadWorldRules($('cfg-world-name').value.trim());configNotice('Загружены правила выбранного имени мира. Проверьте их перед сохранением.');}};
-$('mod-search').oninput=()=>{const q=$('mod-search').value.toLowerCase().trim();document.querySelectorAll('.mod-section').forEach(section=>{let count=0;section.querySelectorAll('.mod-field').forEach(row=>{row.hidden=!row.dataset.search.includes(q);if(!row.hidden)count++;});section.hidden=count===0;if(q)section.open=true;});};
+$('mod-search').oninput=()=>{const q=$('mod-search').value.toLowerCase().trim();document.querySelectorAll('.mod-section').forEach(section=>{let count=0;section.querySelectorAll('.mod-field').forEach(row=>{row.hidden=!(row.dataset.search+' '+row.textContent.toLowerCase()).includes(q);if(!row.hidden)count++;});section.hidden=count===0;if(q)section.open=true;});};
 $('config-save').onclick=()=>saveConfig(false);$('config-apply').onclick=()=>saveConfig(true);
 window.addEventListener('beforeunload',e=>{if(configDirty){e.preventDefault();e.returnValue='';}});
 window.addEventListener('hearth-status',e=>{configBusy=e.detail.busy;configButtons();});

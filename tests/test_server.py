@@ -444,7 +444,7 @@ class HttpTests(unittest.TestCase):
             status, _, raw = self.request('GET','/api/public')
         data = json.loads(raw)
         self.assertEqual(status,200)
-        self.assertEqual(set(data), {'title','description','address','community_url','running','players','game','mod','server_name','mode','site_url','public_listing'})
+        self.assertEqual(set(data), {'title','description','description_en','address','community_url','running','players','game','mod','server_name','mode','site_url','public_listing'})
         self.assertNotIn('must-not-leak', raw.decode())
         self.assertNotIn('password',raw.decode())
 

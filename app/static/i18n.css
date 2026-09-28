@@ -1,0 +1,6 @@
+.language-switch{display:inline-flex;gap:3px;align-items:center;padding:3px;border:1px solid #73877a;border-radius:8px;background:#12201bea;color:#eee;z-index:20;flex-shrink:0}.language-switch button{font:600 12px/1.2 system-ui,sans-serif;letter-spacing:.05em;color:inherit;background:transparent;border:0;border-radius:5px;padding:8px 10px;cursor:pointer;min-width:36px}.language-switch button[aria-pressed=true]{background:#deb477;color:#19221b}.language-switch button:focus-visible{outline:2px solid #fff;outline-offset:2px}.panel-language{position:fixed;right:18px;top:12px}.setup-language{margin-left:auto;align-self:flex-start}.landing-language{margin-left:12px}html[lang=en] .nav nav{gap:18px}@media(max-width:650px){.panel-language{right:10px;top:8px}.landing-language{margin-left:0}.nav{flex-wrap:wrap}.nav .admin{margin-left:auto}.setup-language{position:absolute;right:14px;top:14px}}
+
+body:has(.panel-language) main>header{padding-right:120px}
+
+.dialog-language{float:right;margin:0 0 12px 16px}
+body:has(#dashboard:not([hidden])) .panel-language{left:24px;right:auto;top:88px}body:has(#dashboard:not([hidden])) main>header{padding-right:0}@media(max-width:700px){body:has(#dashboard:not([hidden])) .panel-language{position:sticky;left:auto;top:6px;display:flex;width:max-content;margin:8px 14px 8px auto}}
