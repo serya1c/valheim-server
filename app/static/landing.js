@@ -1,13 +1,15 @@
 'use strict';
 const el=id=>document.getElementById(id);
-let connectAddress='',pending=false;
+let connectAddress='',pending=false,lastPublic=null;
+function renderDescription(){if(!lastPublic)return;document.title=lastPublic.title+' — '+(I18n.language==='en'?'Valheim server':'сервер Valheim')+' · '+(lastPublic.mode==='vanilla'?I18n.t('Без модов'):'Valheim Plus');const text=I18n.language==='en'?(lastPublic.description_en||lastPublic.description):lastPublic.description;setText('server-description',text);document.querySelector('meta[property="og:title"]').content=document.title;document.querySelector('meta[name=description]').content=text;document.querySelector('meta[property="og:description"]').content=text;}
+window.addEventListener('hearth-language',renderDescription);
 function setText(id,value){el(id).textContent=value;}
 async function refreshPublic(){
  if(pending)return;pending=true;
  try{
   const response=await fetch('/api/public',{cache:'no-store'});
   if(!response.ok)throw new Error('Unavailable');
-  const data=await response.json();
+  const data=await response.json();lastPublic=data;
   document.querySelectorAll('[data-server-name]').forEach(node=>{
    // Preserve the small navigation subtitle without using HTML from settings.
    if(node.querySelector('small')){node.firstChild.textContent=data.title;}else node.textContent=data.title;
@@ -19,8 +21,8 @@ async function refreshPublic(){
   document.querySelectorAll('[data-proton-command]').forEach(n=>n.textContent='bash Loki-Mod-Installer-Linux.sh --server '+data.site_url);
   document.querySelectorAll('[data-plus]').forEach(n=>n.hidden=!plus);document.querySelectorAll('[data-vanilla]').forEach(n=>n.hidden=plus);
   setText('mode-label',plus?'Valheim Plus':'Ванильный сервер');
-  document.title=data.title+' — сервер Valheim · '+(plus?'Valheim Plus':'Без модов')+' | Подключение';
-  setText('server-description',data.description);setText('listing-name',data.server_name);
+
+  renderDescription();setText('listing-name',data.server_name);
   setText('public-game',data.game||'Ещё не установлена');setText('public-mod',plus?(data.mod?'V+ '+data.mod:'V+ ещё не установлен'):'Без модов');
   const status=el('public-status');const dot=document.createElement('i');dot.className='dot'+(data.players!==null?' online':'');
   status.replaceChildren(dot,document.createTextNode(data.players!==null?'Очаг горит':data.running?'Мир запущен':'Сервер на привале'));

@@ -1,7 +1,7 @@
 'use strict';
 let csrf = '', polling = false, pendingApproval = null;
 const $ = id => document.getElementById(id);
-const fmtTime = ts => ts ? new Date(ts * 1000).toLocaleString('ru-RU') : '—';
+const fmtTime = ts => ts ? new Date(ts * 1000).toLocaleString(I18n.locale) : '—';
 const bytes = n => n >= 1073741824 ? (n / 1073741824).toFixed(1) + ' ГБ' : (n / 1048576).toFixed(1) + ' МБ';
 const duration = n => Math.floor(n / 3600) + ' ч ' + Math.floor(n % 3600 / 60) + ' мин';
 async function api(url, data) {
@@ -16,7 +16,7 @@ async function api(url, data) {
 }
 function showLogin() { $('dashboard').hidden = true; $('login').hidden = false; csrf = ''; window.dispatchEvent(new Event('hearth-logout')); }
 function showDashboard() { $('login').hidden = true; $('dashboard').hidden = false; window.dispatchEvent(new Event('hearth-login')); }
-function cell(row, text) { const td = document.createElement('td'); td.textContent = text; row.append(td); }
+function cell(row, text, literal=false) { const td = document.createElement('td'); td.textContent = text; if(literal)td.dataset.i18nSkip=''; row.append(td); }
 function table(id, rows, render, cols) {
   const fragment = document.createDocumentFragment();
   if (!rows.length) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = cols; td.className = 'empty'; td.textContent = 'Пока нет данных'; tr.append(td); fragment.append(tr); }
@@ -37,12 +37,10 @@ async function action(name, data = {}) {
   try { await api('/api/action', {action:name,...data}); await refresh(); }
   catch(e) { $('job').textContent = e.message; $('job').className = 'notice error'; }
 }
-async function refresh() {
-  if (!csrf || polling) return;
-  polling = true;
-  try {
-    const s = await api('/api/status');
-    window.dispatchEvent(new CustomEvent('hearth-status',{detail:s}));
+let lastStatus=null;
+function renderStatus(s, notify=true){
+    lastStatus=s;
+    if(notify)window.dispatchEvent(new CustomEvent('hearth-status',{detail:s}));
     $('connection').textContent = '● Панель на связи';
     $('world-name').textContent = s.world;
     $('project-link').href=s.site_url;
@@ -62,12 +60,12 @@ async function refresh() {
     $('compatibility-approval').hidden = !pendingApproval;
     $('approve-update').disabled = s.busy || !pendingApproval;
     if (pendingApproval) $('compatibility-details').textContent = `Steam: Valheim ${pendingApproval.actual}. Мод: V+ ${pendingApproval.mod}. Заявлено автором: Valheim ${pendingApproval.declared}. Одобрение доступно до ${fmtTime(pendingApproval.expires)}; после перезапуска панели проверку нужно повторить.`;
-    table('players-body', s.players, (tr,p) => { cell(tr, (s.online?.names.includes(p.name)?'● ':'') + p.name); cell(tr,p.joins); cell(tr,duration(p.seconds)); cell(tr,fmtTime(p.last_seen)); },4);
+    table('players-body', s.players, (tr,p) => { cell(tr, (s.online?.names.includes(p.name)?'● ':'') + p.name,true); cell(tr,p.joins); cell(tr,duration(p.seconds)); cell(tr,fmtTime(p.last_seen)); },4);
     const kinds = {system:'Система',connection:'Подключение',action:'Действие',update:'Обновление',error:'Ошибка',backup:'Копия',restore:'Восстановление',config:'Настройки',export:'Экспорт',import:'Импорт'};
-    table('events-body', s.events, (tr,e) => { cell(tr,fmtTime(e.ts)); cell(tr,kinds[e.kind] || e.kind); cell(tr,e.message); },3);
+    table('events-body', s.events, (tr,e) => { cell(tr,fmtTime(e.ts)); cell(tr,kinds[e.kind] || e.kind); cell(tr,e.message,['connection','system'].includes(e.kind)); },3);
     $('world-files').replaceChildren();
     s.files.sort((a,b)=>b.modified-a.modified).slice(0,30).forEach(f=>{
-      const row=document.createElement('div');row.className='file-row';const title=document.createElement('strong');title.textContent=f.path;row.append(title,document.createTextNode(bytes(f.bytes)+' · '+fmtTime(f.modified)));$('world-files').append(row);
+      const row=document.createElement('div');row.className='file-row';const title=document.createElement('strong');title.textContent=f.path;title.dataset.i18nSkip='';row.append(title,document.createTextNode(bytes(f.bytes)+' · '+fmtTime(f.modified)));$('world-files').append(row);
     });
     if (!s.files.length) $('world-files').textContent='Сохранений пока нет';
     $('backups').replaceChildren();
@@ -78,6 +76,14 @@ async function refresh() {
     });
     if (!s.backups.length) $('backups').textContent='Резервных копий пока нет';
     $('logs').textContent=s.logs.join('\n');
+}
+window.addEventListener('hearth-language',()=>{if(lastStatus&&csrf)renderStatus(lastStatus,false);});
+async function refresh() {
+  if (!csrf || polling) return;
+  polling = true;
+  try {
+    const s = await api('/api/status');
+    renderStatus(s);
   } catch(e) { $('connection').textContent='Нет связи с панелью'; }
   finally { polling=false; }
 }

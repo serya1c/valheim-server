@@ -64,8 +64,16 @@ class ConfigTests(unittest.TestCase):
             self.manager.configure(self.request('landing',values))
             stop.assert_not_called()
             start.assert_not_called()
-        self.assertEqual(Configuration(self.base).load()['landing'],{**values, 'site_url':'https://loki.ach-play.ru'})
+        self.assertEqual(Configuration(self.base).load()['landing'],{**values, 'description_en':'', 'site_url':'https://loki.ach-play.ru'})
         self.assertTrue((self.base/'config/hearth-settings.previous.json').is_file())
+
+
+    def test_english_description_persists_and_is_validated(self):
+        self.manager.configure(self.request('landing',{'description_en':'Welcome to our world.'}))
+        self.assertEqual(Configuration(self.base).load()['landing']['description_en'],'Welcome to our world.')
+        with self.assertRaises(ValueError):
+            self.manager.configure(self.request('landing',{'description_en':'x'*601}))
+        self.assertEqual(Configuration(self.base).load()['landing']['description_en'],'Welcome to our world.')
 
     def test_landing_rejects_unsafe_links_and_invalid_addresses(self):
         for values in [{'community_url':'javascript:alert(1)'},{'community_url':'https://user:pass@example.com'},{'address':'example.com:99999'},{'address':'example.com:2456/path'},{'title':'x'*81},{'description':'x'*601}]:

@@ -763,6 +763,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self.path = urlsplit(self.path).path
+        if self.path in ('/i18n.js','/i18n-catalog.js','/i18n.css'):
+            name = self.path[1:]
+            mime = 'text/css' if name.endswith('.css') else 'text/javascript'
+            return self.reply(200, (Path(__file__).parent/'static'/name).read_bytes(), mime+'; charset=utf-8')
         if self.path == '/health':
             return self.reply(200, {'panel': 'ok', 'configured': self.manager.panel.configured})
         if not self.manager.panel.configured:
@@ -808,7 +812,7 @@ class Handler(BaseHTTPRequestHandler):
             fresh = running and online and time.time() - online.get('at', 0) < 30
             return self.reply(200, {'title':landing['title'] or config['server']['name'],
                 'server_name':self.manager.config.advertised_name(),
-                'description':landing['description'], 'address':landing['address'],
+                'description':landing['description'], 'description_en':landing['description_en'], 'address':landing['address'],
                 'public_listing':listing_required() or config['server']['public'], 'site_url':landing['site_url'], 'mode':versions.get('mode', 'plus' if versions else config['server']['mode']),
                 'community_url':landing['community_url'], 'running':running,
                 'players':online['count'] if fresh else None,

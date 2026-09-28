@@ -2,9 +2,9 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script><script defer src="/transfer.js"></script>
+  <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/i18n.css"><script defer src="/i18n-catalog.js"></script><script defer src="/i18n.js"></script><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script><script defer src="/transfer.js"></script>
 </head>
-<body>
+<body><div class="language-switch panel-language" data-language-switch></div>
   <div id="login" class="login">
     <form id="login-form"><a href="/" class="muted">← На сайт сервера</a><div class="rune">ᛟ</div><p class="eyebrow">VALHEIM SERVER CONTROL</p><h1>Добро пожаловать<br>к очагу.</h1>
       <p class="muted">Мир, друзья и всё, что нужно вашему серверу.</p>
@@ -18,7 +18,7 @@
     </nav><div class="aside-bottom"><a href="/" class="quiet">← Предпросмотр сайта</a><br><a id="project-link" href="/" class="quiet" target="_blank" rel="noopener noreferrer">Сайт сервера ↗</a><br><span class="tiny">VALHEIM / ВАШ МИР</span><button id="logout" class="quiet">Выйти из панели</button></div></aside>
     <main>
       <header><span class="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ / ОБЗОР</span><span id="connection" class="pill">Подключение…</span></header>
-      <section id="overview"><div class="title-row"><div><p class="eyebrow accent">ВАШ МИР ЖДЁТ</p><h1 id="world-name">North</h1><p class="muted" id="version-label">Версии пока не установлены</p></div><div class="rune small">ᛟ</div></div>
+      <section id="overview"><div class="title-row"><div><p class="eyebrow accent">ВАШ МИР ЖДЁТ</p><h1 id="world-name" data-i18n-skip>North</h1><p class="muted" id="version-label">Версии пока не установлены</p></div><div class="rune small">ᛟ</div></div>
         <div class="hero"><div><p class="eyebrow">ОЧАГ ПОД ПРИСМОТРОМ</p><h2>Следующее приключение<br>начинается здесь.</h2><p>Сохранения, игроки и управление в одном месте.</p></div><div class="hero-mark">ᛉ</div></div>
         <div class="metrics"><article><p>Сервер</p><strong id="server-state">—</strong><small id="uptime">Ожидание данных</small></article><article><p>Игроков онлайн</p><strong id="online">—</strong><small>Опрос каждые 10 секунд</small></article><article><p>Размер сохранений</p><strong id="world-size">—</strong><small id="world-time">—</small></article><article><p>Свободно на диске</p><strong id="disk">—</strong><small>Том сервера</small></article></div>
         <div class="toolbar"><button data-action="start" class="primary">▶ Запустить</button><button data-action="stop">■ Остановить</button><button data-action="restart">↻ Перезапустить</button><button data-action="backup">↓ Создать копию</button></div>
@@ -69,7 +69,8 @@
             <label>Название на сайте<input id="landing-title" maxlength="80"><small>До 80 символов. Пусто — использовать название игрового сервера.</small></label>
             <label>Адрес для игроков<input id="landing-address" maxlength="260" placeholder="valheim.example.com:2456"><small>Внешний IPv4 или домен и порт игры. Пусто — скрыть адрес. Это подпись на сайте, а не настройка DNS и портов.</small></label>
             <label>Ссылка на сообщество<input id="landing-community_url" type="url" maxlength="500" placeholder="https://discord.gg/your-invite"><small>Полный HTTP(S)-адрес Discord, Telegram или другого сообщества. Пусто — скрыть кнопку.</small></label>
-            <label>Описание мира<textarea id="landing-description" maxlength="600" rows="4"></textarea><small>До 600 символов, один абзац. Отображается на первом экране сайта.</small></label>
+            <label>Описание мира на русском<textarea id="landing-description" maxlength="600" rows="4"></textarea><small>До 600 символов, один абзац. Отображается на первом экране сайта.</small></label>
+            <label>Описание мира на английском<textarea id="landing-description_en" maxlength="600" rows="4"></textarea><small>Необязательно. Если пусто, показывается русское описание.</small></label>
           </div><a href="/" target="_blank" rel="noopener">Открыть лендинг ↗</a></div>
           <div id="config-panel" role="tabpanel" hidden><p class="muted">Настройки панели сохраняются в томе Docker отдельно от игровых резервных копий. Игра продолжает работать.</p><div class="settings-grid">
             <label>Интервал плановых копий, часов<input id="panel-backup_hours" type="number" min="0" max="720" required><small>Целое число 0–720. 0 отключает расписание. Копии ждут пустого сервера.</small></label>
@@ -100,5 +101,5 @@
       </section><footer>HEARTH / Личный сервер Valheim · Обновление панели каждые 5 секунд</footer>
     </main>
   </div>
-  <dialog id="confirm"><form method="dialog"><h2 id="confirm-title">Подтвердите действие</h2><p id="confirm-text"></p><div class="toolbar"><button value="cancel">Отмена</button><button value="ok" class="primary">Продолжить</button></div></form></dialog>
+  <dialog id="confirm"><form method="dialog"><div class="language-switch dialog-language" data-language-switch></div><h2 id="confirm-title">Подтвердите действие</h2><p id="confirm-text"></p><div class="toolbar"><button value="cancel">Отмена</button><button value="ok" class="primary">Продолжить</button></div></form></dialog>
 </body></html>
