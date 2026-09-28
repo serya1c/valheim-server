@@ -121,8 +121,8 @@ class CoreTests(unittest.TestCase):
     def test_rotation_preserves_manual_and_preupdate(self):
         for name in ['1-scheduled', '2-scheduled', '3-scheduled', '4-manual', '5-pre-update']:
             (self.base / 'backups' / (name + '.tar.gz')).touch()
-        with patch.dict(os.environ, BACKUP_KEEP='2'):
-            self.manager.prune_backups()
+        self.manager.panel.save({**self.manager.panel.load(), 'auth':server.password_hash('testing-panel-password'), 'backup_keep':2})
+        self.manager.prune_backups()
         self.assertEqual(len(list((self.base / 'backups').iterdir())), 4)
         self.assertTrue((self.base / 'backups/5-pre-update.tar.gz').exists())
 
@@ -230,6 +230,7 @@ class CoreTests(unittest.TestCase):
     def test_restart_during_trial_selects_rollback(self):
         manager = MagicMock()
         manager.state = {'active': 'new', 'previous': 'old', 'update_trial': True}
+        manager.boot_action.return_value = 'rollback'
         with patch.dict(os.environ, {'PANEL_PASSWORD': 'test-panel-password', 'SERVER_PASSWORD': 'test-game-password', 'WORLD_NAME': 'North'}), patch('server.Manager', return_value=manager), patch('server.ThreadingHTTPServer'), patch('server.threading.Thread'), patch('server.signal.signal'), patch('server.os.umask'):
             server.main()
         manager.submit.assert_called_once_with('rollback')
@@ -377,6 +378,7 @@ class HttpTests(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         server.Handler.manager = server.Manager(Path(cls.tmp.name))
         server.Handler.password = 'correct-long-password'
+        server.Handler.manager.panel.save({**server.Handler.manager.panel.load(),'auth':server.password_hash('correct-long-password')})
         cls.http = server.ThreadingHTTPServer(('127.0.0.1', 0), server.Handler)
         cls.thread = threading.Thread(target=cls.http.serve_forever, daemon=True)
         cls.thread.start()

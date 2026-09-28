@@ -46,7 +46,7 @@ def site_url(value):
 
 
 def listing_required():
-    return os.getenv('REQUIRE_PUBLIC_LISTING', '1') == '1'
+    return os.getenv('REQUIRE_PUBLIC_LISTING', '0') == '1'
 
 PRESETS = {'normal':'Обычный', 'casual':'Беззаботный', 'easy':'Лёгкий', 'hard':'Сложный',
            'hardcore':'Хардкор', 'immersive':'Погружение', 'hammer':'Строительство'}
