@@ -25,7 +25,8 @@ import urllib.request
 from urllib.parse import urlsplit
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from configuration import Configuration, atomic_text, game_ports, server_mode, listing_required
+from configuration import Configuration, atomic_text, game_ports, server_mode, listing_required, default_world
+from panel import Panel, password_hash
 
 BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
@@ -144,6 +145,8 @@ class Manager:
             (base / folder).mkdir(parents=True, exist_ok=True)
         self.store = Store(base / 'panel.sqlite')
         self.config = Configuration(base)
+        self.panel = Panel(base)
+        self.setup_token = secrets.token_urlsafe(32)
         self.secret_values = {os.getenv('SERVER_PASSWORD'), os.getenv('PANEL_PASSWORD'), self.config.load()['server']['password']}
         self.lock = threading.Lock()
         self.proc = None
@@ -165,6 +168,55 @@ class Manager:
         self.state_path = base / 'state.json'
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {'active': None, 'previous': None}
         self.started = time.time()
+
+    def setup_view(self):
+        view = self.config.view()
+        if not self.config.path.exists() and not self.state.get('active'):
+            view['server'].update(name='Valheim', mode='plus', public=True, add_site=True, password_set=False)
+            view['landing'].update(title='Valheim', site_url='http://localhost:8080', address='', community_url='')
+        return {'csrf': self.setup_token, 'existing': bool(self.state.get('active')), 'config': view, 'panel': self.panel.view()}
+
+    def complete_setup(self, data):
+        with self.lock:
+            if self.panel.configured:
+                raise ValueError('Первичная настройка уже завершена')
+            if self.closing:
+                raise ValueError('Панель останавливается')
+            if set(data) != {'panel_password', 'panel', 'server', 'world', 'landing'}:
+                raise ValueError('Неполные настройки первого запуска')
+            panel = {**Panel.validate(data['panel']), 'auth': password_hash(data['panel_password'])}
+            # Validate everything in isolation before changing the real configuration.
+            with tempfile.TemporaryDirectory(dir=self.base) as tmp:
+                target = Path(tmp)
+                (target / 'config').mkdir()
+                config = Configuration(target)
+                atomic_json(config.path, self.config.load())
+                for scope in ('server', 'world', 'landing'):
+                    path, content = config.prepare({'scope': scope, 'values': data[scope], 'revision': config.revision()})
+                    atomic_text(path, content)
+                settings = config.load()
+            if panel['cookie_secure'] and not settings['landing']['site_url'].startswith('https://'):
+                raise ValueError('Для входа только по HTTPS укажите HTTPS-адрес сайта')
+            previous = self.config.path.read_bytes() if self.config.path.exists() else None
+            if self.state.get('active'):
+                self.backup('pre-setup')
+            try:
+                atomic_json(self.config.path, settings)
+                self.panel.save(panel)  # Commit marker; game remains stopped until this succeeds.
+            except Exception:
+                if previous is None:
+                    self.config.path.unlink(missing_ok=True)
+                else:
+                    atomic_text(self.config.path, previous.decode('utf-8'))
+                raise
+            self.secret_values.add(settings['server']['password'])
+            self.setup_token = None
+            self.store.event('config', 'Первичная настройка завершена')
+
+    def boot_action(self):
+        if self.state.get('update_trial') and self.state.get('previous'):
+            return 'rollback'
+        return 'start' if self.state.get('active') else 'install'
 
     def say(self, line):
         # The game may echo command-line arguments on error.
@@ -300,7 +352,7 @@ class Manager:
     def prune_backups(self):
         # Keep all manual and pre-update/restore backups; rotate scheduled backups only.
         files = sorted((self.base / 'backups').glob('*-scheduled.tar.gz'), reverse=True)
-        for p in files[max(1, int(os.getenv('BACKUP_KEEP', '12'))):]:
+        for p in files[self.panel.load()['backup_keep']:]:
             p.unlink()
 
     def latest_release(self):
@@ -556,6 +608,25 @@ class Manager:
     def configure(self, data):
         if type(data.get('restart')) is not bool:
             raise ValueError('Выберите способ применения настроек')
+        if data.get('scope') == 'panel':
+            if data.get('panel_revision') != self.panel.revision():
+                raise ValueError('Настройки панели изменились; перечитайте их')
+            values = dict(data.get('values', {}))
+            new_password = values.pop('password', '')
+            current_password = values.pop('current_password', '')
+            settings = {**self.panel.load(), **Panel.validate(values)}
+            if settings['cookie_secure'] and not self.config.load()['landing']['site_url'].startswith('https://'):
+                raise ValueError('Сначала укажите HTTPS-адрес во вкладке лендинга')
+            if new_password:
+                if not self.panel.verify(current_password):
+                    raise ValueError('Текущий пароль администратора неверен')
+                settings['auth'] = password_hash(new_password)
+            self.panel.save(settings)
+            if new_password:
+                with Handler.auth_lock:
+                    Handler.sessions.clear()
+            self.store.event('config', 'Обновлены настройки панели')
+            return
         path, content = self.config.prepare(data)  # Validate before interrupting players.
         if data.get('scope') == 'landing':
             atomic_json(path.with_name('hearth-settings.previous.json'), self.config.load())
@@ -579,7 +650,8 @@ class Manager:
             self.start()
 
     def poll(self):
-        next_backup = time.time() + float(os.getenv('BACKUP_HOURS', '6')) * 3600
+        last_interval = self.panel.load()['backup_hours'] * 3600
+        next_backup = time.time() + last_interval
         while not self.closing:
             try:
                 if self.running():
@@ -604,8 +676,11 @@ class Manager:
                 self.online = None
                 self.last_poll = None
                 self.last_names.clear()
-            interval = float(os.getenv('BACKUP_HOURS', '6')) * 3600
-            if interval > 0 and time.time() >= next_backup:
+            interval = self.panel.load()['backup_hours'] * 3600
+            if interval != last_interval:
+                next_backup = time.time() + interval
+                last_interval = interval
+            if self.panel.configured and interval > 0 and time.time() >= next_backup:
                 # Never interrupt players or assume a failed query means an empty server.
                 if not self.busy and (not self.running() or self.online is not None and self.online['count'] == 0):
                     with contextlib.suppress(ValueError):
@@ -652,7 +727,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('X-Frame-Options', 'DENY')
-        if self.path.startswith(('/admin', '/api/', '/health')):
+        if not self.manager.panel.configured or self.path.startswith(('/admin', '/api/', '/health')):
             self.send_header('X-Robots-Tag', 'noindex, nofollow')
         self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         if cookie:
@@ -671,8 +746,30 @@ class Handler(BaseHTTPRequestHandler):
             s = self.sessions.get(token)
             return s if s and s['expires'] > time.time() else None
 
+    def local_setup(self):
+        try:
+            host = urlsplit('http://' + self.headers.get('Host', '')).hostname
+            return host in ('localhost', '127.0.0.1', '::1') and not any(
+                key.lower() == 'forwarded' or key.lower().startswith('x-forwarded-') for key in self.headers)
+        except ValueError:
+            return False
+
     def do_GET(self):
         self.path = urlsplit(self.path).path
+        if self.path == '/health':
+            return self.reply(200, {'panel': 'ok', 'configured': self.manager.panel.configured})
+        if not self.manager.panel.configured:
+            if not self.local_setup():
+                return self.reply(503, {'error':'Первичная настройка доступна только через localhost:8080 (для удалённого хоста используйте SSH-туннель).'})
+            if self.path == '/api/setup':
+                return self.reply(200, self.manager.setup_view())
+            setup_assets = {'/':('setup.html','text/html'), '/admin':('setup.html','text/html'), '/admin/':('setup.html','text/html'), '/setup':('setup.html','text/html'), '/setup.js':('setup.js','text/javascript'), '/setup.css':('setup.css','text/css')}
+            if self.path in setup_assets:
+                name, mime = setup_assets[self.path]
+                return self.reply(200, (Path(__file__).parent / 'static' / name).read_bytes(), mime+'; charset=utf-8')
+            return self.reply(409, {'error':'Сначала завершите первоначальную настройку'})
+        if self.path == '/api/setup' or self.path == '/setup':
+            return self.reply(409, {'error':'Первичная настройка уже завершена; войдите в /admin'})
         if self.path in {'/downloads/Loki-Mod-Installer.exe', '/downloads/Loki-Mod-Installer.exe.sha256',
                          '/downloads/Loki-Mod-Installer-Linux.sh', '/downloads/Loki-Mod-Installer-Linux.sh.sha256'}:
             name = self.path.rsplit('/', 1)[1]
@@ -695,8 +792,6 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == '/robots.txt':
                 return self.reply(200, f'User-agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin\nDisallow: /health\nSitemap: {site}/sitemap.xml\n'.encode(), 'text/plain; charset=utf-8')
             return self.reply(200, ('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>'+html.escape(site)+'/</loc></url></urlset>').encode(), 'application/xml; charset=utf-8')
-        if self.path == '/health':
-            return self.reply(200, {'panel': 'ok'})
         if self.path == '/api/public':
             config = self.manager.config.load()
             landing = config['landing']
@@ -739,7 +834,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.manager.status())
         if self.path == '/api/config':
             try:
-                return self.reply(200, self.manager.config.view())
+                return self.reply(200, {**self.manager.config.view(), 'panel':self.manager.panel.view(), 'panel_revision':self.manager.panel.revision()})
             except ValueError as e:
                 return self.reply(400, {'error':str(e)})
         if self.path.startswith('/api/backup/'):
@@ -766,12 +861,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(403, {'error': 'Недопустимый запрос'})
         try:
             length = int(self.headers.get('Content-Length', '0'))
-            limit = 262144 if self.path == '/api/action' else 4096
+            limit = 262144 if self.path in ('/api/action', '/api/setup') else 4096
             if not 0 < length <= limit:
                 raise ValueError('Недопустимый размер запроса')
             data = json.loads(self.rfile.read(length))
             if not isinstance(data, dict):
                 raise ValueError('Ожидается объект JSON')
+            if self.path == '/api/setup':
+                if self.manager.panel.configured:
+                    return self.reply(409, {'error':'Первичная настройка уже завершена'})
+                if not self.local_setup() or not hmac.compare_digest(self.headers.get('X-Setup-Token', ''), self.manager.setup_token or ''):
+                    return self.reply(403, {'error':'Откройте мастер через localhost и обновите страницу'})
+                self.manager.complete_setup(data)
+                self.manager.submit(self.manager.boot_action())
+                next_url = self.manager.config.load()['landing']['site_url'] + '/admin' if self.manager.panel.load()['cookie_secure'] else '/admin'
+                return self.reply(201, {'next_url':next_url})
+            if not self.manager.panel.configured:
+                return self.reply(409, {'error':'Сначала завершите первоначальную настройку'})
             if self.path == '/api/login':
                 with self.auth_lock:
                     now = time.time()
@@ -780,8 +886,7 @@ class Handler(BaseHTTPRequestHandler):
                     if len(self.attempts) >= 10:
                         return self.reply(429, {'error': 'Слишком много попыток. Подождите минуту.'})
                     self.attempts.append(now)
-                    supplied = str(data.get('password', '')).encode()
-                    if not hmac.compare_digest(supplied, self.password.encode()):
+                    if not self.manager.panel.verify(data.get('password', '')):
                         return self.reply(401, {'error': 'Неверный пароль'})
                     expired = [k for k, v in self.sessions.items() if v['expires'] < now]
                     for k in expired:
@@ -790,7 +895,7 @@ class Handler(BaseHTTPRequestHandler):
                         del self.sessions[next(iter(self.sessions))]
                     token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
                     self.sessions[token] = {'expires': now + 28800, 'csrf': csrf}
-                secure = '; Secure' if os.getenv('COOKIE_SECURE') == '1' else ''
+                secure = '; Secure' if self.manager.panel.load()['cookie_secure'] else ''
                 return self.reply(200, {'csrf': csrf}, cookie=f'session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800{secure}')
             session = self.session()
             if not session or not hmac.compare_digest(self.headers.get('X-CSRF-Token', ''), session['csrf']):
@@ -810,21 +915,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(404, {'error': 'Не найдено'})
         except (ValueError, TypeError) as e:
             return self.reply(400, {'error': str(e)})
+        except OSError:
+            return self.reply(500, {'error':'Не удалось сохранить данные. Проверьте свободное место и права доступа; повторите настройку.'})
 
 
 def main():
-    password = os.getenv('PANEL_PASSWORD', '')
-    game_password = os.getenv('SERVER_PASSWORD', '')
-    if len(password) < 16 or 'CHANGE_ME' in password or len(game_password) < 5 or 'CHANGE_ME' in game_password:
-        raise SystemExit('Укажите PANEL_PASSWORD (16+ символов) и SERVER_PASSWORD (5+ символов) в .env')
-    if game_password.lower() in os.getenv('SERVER_NAME', 'Loki').lower():
-        raise SystemExit('Пароль игры не должен входить в название сервера')
-    if not re.fullmatch(r'[\w -]{1,80}', os.getenv('WORLD_NAME', 'North')):
-        raise SystemExit('WORLD_NAME: используйте буквы, цифры, пробел, дефис или подчёркивание')
     game_ports()
     os.umask(0o077)
     manager = Manager()
-    Handler.manager, Handler.password = manager, password
+    Handler.manager = manager
+    # Existing deployments that still pass their old environment can migrate once.
+    legacy_password = os.getenv('PANEL_PASSWORD', '')
+    if not manager.panel.configured and len(legacy_password) >= 16 and 'CHANGE_ME' not in legacy_password:
+        settings = manager.config.load()
+        if len(settings['server']['password']) >= 5:
+            atomic_json(manager.config.path, settings)
+            manager.panel.save({'auth':password_hash(legacy_password), 'backup_hours':int(os.getenv('BACKUP_HOURS','6')),
+                'backup_keep':int(os.getenv('BACKUP_KEEP','12')), 'cookie_secure':os.getenv('COOKIE_SECURE') == '1'})
     httpd = ThreadingHTTPServer(('0.0.0.0', 8080), Handler)
     def shutdown(*_):
         manager.closing = True
@@ -840,13 +947,10 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
     threading.Thread(target=manager.poll, daemon=True).start()
-    if manager.state.get('update_trial') and manager.state.get('previous'):
-        manager.say('Обновление прервано до подтверждения запуска; восстанавливается прежний мир')
-        manager.submit('rollback')
-    elif manager.state.get('active'):
-        manager.submit('start')
+    if manager.panel.configured:
+        manager.submit(manager.boot_action())
     else:
-        manager.submit('install')
+        manager.say('Первый запуск: откройте http://localhost:8080 — настройте сервер в браузере. Игра пока не запускается.')
     httpd.serve_forever()
     httpd.server_close()
 
