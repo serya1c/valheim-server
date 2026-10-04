@@ -414,6 +414,18 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(self.request('GET', '/api/config')[0], 401)
         self.assertEqual(self.request('GET', '/api/backup/test.tar.gz')[0], 401)
 
+    def test_operations_requires_auth_csrf_and_hides_webhook(self):
+        body={'command':'discord','url':'https://discord.com/api/webhooks/123/'+'a'*40,'events':[]}
+        headers={'Content-Type':'application/json','X-Hearth':'1'}
+        self.assertEqual(self.request('POST','/api/operations',body,headers)[0],403)
+        headers=self.login();bad=dict(headers);bad['X-CSRF-Token']='wrong'
+        self.assertEqual(self.request('POST','/api/operations',body,bad)[0],403)
+        status,_,raw=self.request('POST','/api/operations',body,headers)
+        self.assertEqual(status,200);self.assertNotIn(body['url'].encode(),raw)
+        self.assertNotIn(body['url'].encode(),self.request('GET','/api/status',headers=headers)[2])
+        public=json.loads(self.request('GET','/api/public')[2]);self.assertNotIn('discord',public)
+        self.request('POST','/api/operations',{'command':'discord','remove':True,'events':[]},headers)
+
     def test_landing_and_admin_routes(self):
         for path, marker in [('/', 'Твоя сага'), ('/admin', 'login-form'), ('/admin/', 'login-form')]:
             status, headers, raw = self.request('GET', path)
@@ -444,7 +456,7 @@ class HttpTests(unittest.TestCase):
             status, _, raw = self.request('GET','/api/public')
         data = json.loads(raw)
         self.assertEqual(status,200)
-        self.assertEqual(set(data), {'title','description','description_en','address','community_url','running','players','game','mod','server_name','mode','site_url','public_listing'})
+        self.assertEqual(set(data), {'title','description','description_en','address','community_url','running','players','game','mod','server_name','mode','site_url','public_listing','maintenance'})
         self.assertNotIn('must-not-leak', raw.decode())
         self.assertNotIn('password',raw.decode())
 
