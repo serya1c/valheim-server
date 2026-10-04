@@ -1098,9 +1098,75 @@ window.HEARTH_EN = {
   "Обслуживание запланировано": "Maintenance scheduled",
   "Задача отменена": "Task cancelled",
   "Проверочное уведомление в очереди": "Test notification queued",
-  "Скачайте резервную копию, затем релиз и замените файлы проекта в прежнем каталоге. Выполните команду из этого каталога с прежним именем проекта и файлами Compose. Пересоздание контейнера перезапустит игру и отключит игроков.": "Download a backup, then the release, and replace project files in the existing directory. Run the command from that directory with the same project name and Compose files. Recreating the container restarts the game and disconnects players."
+  "Скачайте резервную копию, затем релиз и замените файлы проекта в прежнем каталоге. Выполните команду из этого каталога с прежним именем проекта и файлами Compose. Пересоздание контейнера перезапустит игру и отключит игроков.": "Download a backup, then the release, and replace project files in the existing directory. Run the command from that directory with the same project name and Compose files. Recreating the container restarts the game and disconnects players.",
+  "Доступ игроков по SteamID64": "Player access by SteamID64",
+  "Используйте точный SteamID64 аккаунта: 17 цифр или Steam_ и 17 цифр. Ники персонажей из истории ниже не определяют SteamID. Блокировки и игровые права можно менять, даже когда игрок не в сети.": "Use the account's exact SteamID64: 17 digits, optionally prefixed with Steam_. Character names in the history below do not identify Steam accounts. Bans and game permissions can be changed while a player is offline.",
+  "Идентификатор аккаунта Steam, не ник и не ссылка на профиль.": "The Steam account identifier, not a nickname or profile URL.",
+  "Заблокировать": "Ban",
+  "Снять блокировку": "Unban",
+  "Назначить игровым администратором": "Grant game administrator permissions",
+  "Снять игровые права администратора": "Revoke game administrator permissions",
+  "Отключить через временную блокировку": "Disconnect using a temporary ban",
+  "Применить к SteamID": "Apply to SteamID",
+  "Это права администратора игры, не доступ к веб-панели. После изменения прав переподключитесь к серверу. Отключение выполняется через временный бан на 30 секунд. Valheim применяет списки с задержкой до 15 секунд. Постоянный бан не снимается. Ответ панели подтверждает изменение списков; фактическое отключение проверяйте в игре.": "These are game administrator permissions, not web panel access. Reconnect to the server after changing permissions. Disconnection uses a temporary ban lasting 30 seconds. Valheim applies list changes with a delay of up to 15 seconds. Permanent bans are preserved. The panel response confirms list changes; verify actual disconnection in the game.",
+  "Игровые администраторы": "Game administrators",
+  "Заблокированные SteamID": "Banned SteamIDs",
+  "Временные блокировки для отключения": "Temporary bans for disconnection",
+  "Записи других форматов в игровых списках сохраняются. Панель показывает их количество и управляет только SteamID64.": "Entries in other formats are preserved in the game lists. The panel shows their count and manages SteamID64 entries only.",
+  "Данные доступа игроков пока недоступны": "Player access data is not available yet",
+  "Игровых администраторов пока нет": "No game administrators yet",
+  "Заблокированных SteamID пока нет": "No banned SteamIDs yet",
+  "Снять права": "Revoke permissions",
+  "Активных временных блокировок нет": "No active temporary bans",
+  "Снятие не раньше: ": "Removal no earlier than: ",
+  "Снять сейчас": "Remove now",
+  "Введите SteamID64: 17 цифр или Steam_ и 17 цифр": "Enter a SteamID64: 17 digits, optionally prefixed with Steam_",
+  "Бан сохранён. Valheim применит его с небольшой задержкой.": "Ban saved. Valheim will apply it after a short delay.",
+  "Бан снят. Valheim применит изменение с небольшой задержкой.": "Ban removed. Valheim will apply the change after a short delay.",
+  "Права администратора игры выданы. Игроку нужно переподключиться.": "Game administrator permissions granted. The player needs to reconnect.",
+  "Права администратора игры сняты. Игроку нужно переподключиться.": "Game administrator permissions revoked. The player needs to reconnect.",
+  "Запрос на отключение сохранён: временный бан на 30 секунд.": "Disconnection request saved: a temporary ban lasting 30 seconds.",
+  "Введите SteamID64: 17 цифр или Steam_<SteamID64>": "Enter a SteamID64: 17 digits or Steam_<SteamID64>",
+  "Неизвестное действие с игроком": "Unknown player action",
+  "Для отключения игрока сервер должен быть запущен": "The server must be running to disconnect a player",
+  "Игрок уже забанен. Постоянный бан не снимается при отключении.": "The player is already banned. Disconnection does not remove a permanent ban.",
+  "Для этого SteamID уже выполняется отключение": "A disconnection request for this SteamID is already in progress",
+  "Не удалось прочитать списки доступа. Проверьте adminlist.txt и bannedlist.txt.": "Could not read access lists. Check adminlist.txt and bannedlist.txt.",
+  "Список доступа изменился. Обновите страницу и повторите действие.": "The access list changed. Refresh the page and try again.",
+  "Не удалось сохранить список доступа. Проверьте права на каталог saves.": "Could not save the access list. Check permissions for the saves directory.",
+  "Управление игроками": "Player management"
 };
 window.HEARTH_PATTERNS = [
+  ["Бан игрока: Steam_{0}", "Player banned: Steam_{0}"],
+  ["Снятие бана: Steam_{0}", "Player unbanned: Steam_{0}"],
+  ["Выдача игровых прав администратора: Steam_{0}", "Game administrator permissions granted: Steam_{0}"],
+  ["Снятие игровых прав администратора: Steam_{0}", "Game administrator permissions revoked: Steam_{0}"],
+  ["Запрос отключения игрока: Steam_{0}", "Player disconnection requested: Steam_{0}"],
+  ["Временный бан снят: Steam_{0}", "Temporary ban removed: Steam_{0}"],
+  [
+    "Заблокировать SteamID {0}? Этот аккаунт будет запрещён на игровом сервере.",
+    "Ban SteamID {0}? This account will be banned from the game server."
+  ],
+  [
+    "Назначить SteamID {0} игровым администратором? Это даёт игровые права и не открывает доступ к веб-панели. После изменения прав переподключитесь к серверу.",
+    "Grant game administrator permissions to SteamID {0}? This grants game permissions, not web panel access. Reconnect to the server after changing permissions."
+  ],
+  [
+    "Снять игровые права администратора у SteamID {0}? Доступ к веб-панели не изменится. После изменения прав переподключитесь к серверу.",
+    "Revoke game administrator permissions from SteamID {0}? Web panel access will not change. Reconnect to the server after changing permissions."
+  ],
+  [
+    "Запросить отключение SteamID {0} через временный бан на 30 секунд? Valheim применяет списки с задержкой до 15 секунд. Постоянный бан не снимается. Ответ панели не подтверждает фактическое отключение.",
+    "Request disconnection of SteamID {0} using a temporary ban lasting 30 seconds? Valheim applies list changes with a delay of up to 15 seconds. Permanent bans are preserved. The panel response does not confirm actual disconnection."
+  ],
+  [
+    "Других записей в списке администраторов: {0}",
+    "Other entries in the administrator list: {0}"
+  ],
+  [
+    "Других записей в списке блокировок: {0}",
+    "Other entries in the ban list: {0}"
+  ],
   [
     "Раздел {0}",
     "Section {0}"

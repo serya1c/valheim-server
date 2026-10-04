@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/i18n.css"><script defer src="/i18n-catalog.js"></script><script defer src="/i18n.js"></script><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script><script defer src="/transfer.js"></script><script defer src="/operations.js"></script>
+  <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/i18n.css"><script defer src="/i18n-catalog.js"></script><script defer src="/i18n.js"></script><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script><script defer src="/transfer.js"></script><script defer src="/operations.js"></script><script defer src="/players.js"></script>
 </head>
 <body><div class="language-switch panel-language" data-language-switch></div>
   <div id="login" class="login">
@@ -25,6 +25,19 @@
         <div id="job" class="notice" role="status">Готово</div>
       </section>
       <section id="players"><div class="section-head"><h2>Игроки</h2><span class="eyebrow">ИСТОРИЯ ПРИКЛЮЧЕНИЙ</span></div>
+        <article class="card"><h3>Доступ игроков по SteamID64</h3>
+          <p class="muted">Используйте точный SteamID64 аккаунта: 17 цифр или Steam_ и 17 цифр. Ники персонажей из истории ниже не определяют SteamID. Блокировки и игровые права можно менять, даже когда игрок не в сети.</p>
+          <form id="player-access-form"><div class="settings-grid">
+            <label>SteamID64<input id="player-steam-id" type="text" maxlength="23" pattern="(?:Steam_)?[0-9]{17}" placeholder="76561198000000000" autocomplete="off" spellcheck="false" required aria-describedby="player-id-help"><small id="player-id-help">Идентификатор аккаунта Steam, не ник и не ссылка на профиль.</small></label>
+            <label>Действие<select id="player-access-action"><option value="ban">Заблокировать</option><option value="unban">Снять блокировку</option><option value="admin">Назначить игровым администратором</option><option value="unadmin">Снять игровые права администратора</option><option value="kick">Отключить через временную блокировку</option></select></label>
+          </div><button type="submit" id="player-access-apply" disabled>Применить к SteamID</button></form>
+          <p id="player-kick-unavailable" class="tiny" hidden>Для отключения игрока сервер должен быть запущен</p>
+          <p class="tiny">Это права администратора игры, не доступ к веб-панели. После изменения прав переподключитесь к серверу. Отключение выполняется через временный бан на 30 секунд. Valheim применяет списки с задержкой до 15 секунд. Постоянный бан не снимается. Ответ панели подтверждает изменение списков; фактическое отключение проверяйте в игре.</p>
+          <p id="player-access-message" role="status"></p><p id="player-access-error" role="alert" class="muted"></p>
+          <div class="two-col"><div><h3>Игровые администраторы</h3><div id="player-admins" class="file-list"></div><p id="player-other-admins" class="tiny"></p></div><div><h3>Заблокированные SteamID</h3><div id="player-banned" class="file-list"></div><p id="player-other-bans" class="tiny"></p></div></div>
+          <h3>Временные блокировки для отключения</h3><div id="player-kicks" class="file-list"></div>
+          <p class="tiny">Записи других форматов в игровых списках сохраняются. Панель показывает их количество и управляет только SteamID64.</p>
+        </article>
         <p class="muted">Входы — из лога игры. Время — оценка по A2S с момента установки панели. Если сервер скрывает имена, время не учитывается. Одинаковые имена объединяются.</p>
         <div class="table-wrap"><table><thead><tr><th>Персонаж</th><th>Входов</th><th>Наблюдаемое время</th><th>Последняя активность</th></tr></thead><tbody id="players-body"></tbody></table></div>
       </section>

@@ -74,6 +74,90 @@ class CoreTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.manager.backup()
 
+    def test_backup_removes_temporary_kicks_and_preserves_permanent_bans(self):
+        self.release('one')
+        steam_id = '76561198000000001'
+        permanent = 'Steam_76561198000000002'
+        banned = self.base / 'saves/bannedlist.txt'
+        banned.write_text('// Server rules\n' + permanent + '\n', encoding='utf-8')
+        with patch.object(self.manager, 'running', return_value=True):
+            self.manager.player_access.perform('kick', steam_id)
+        name = self.manager.backup()
+        with tarfile.open(self.base / 'backups' / name, 'r:gz') as archive:
+            saved = archive.extractfile('saves/bannedlist.txt').read().decode('utf-8')
+        self.assertEqual(saved.splitlines(), ['// Server rules', permanent])
+        self.assertEqual(banned.read_bytes().decode('utf-8'), saved)
+        with patch.object(self.manager, 'start'):
+            self.manager.restore(name)
+        self.assertEqual(self.manager.player_access.view()['kicks'], [])
+        self.assertEqual(self.manager.player_access.view()['banned'], ['76561198000000002'])
+
+    def test_poll_expires_kick_while_busy_operation_holds_manager_lock(self):
+        steam_id = '76561198000000001'
+        self.manager.panel.save({**self.manager.panel.load(), 'backup_hours': 0})
+        with patch.object(self.manager, 'running', return_value=True), patch('server.time.time', return_value=1000):
+            self.manager.player_access.perform('kick', steam_id)
+        self.manager.busy = True
+        errors = []
+
+        def poll_once():
+            try:
+                self.manager.poll()
+            except BaseException as error:
+                errors.append(error)
+
+        def end_cycle(_):
+            self.manager.closing = True
+
+        self.manager.lock.acquire()
+        try:
+            with patch.object(self.manager, 'running', return_value=False), patch('server.time.time', return_value=1031), patch('server.time.sleep', side_effect=end_cycle), patch.object(self.manager.operations, 'tick'), patch.object(self.manager, 'submit') as submit:
+                worker = threading.Thread(target=poll_once, daemon=True)
+                worker.start()
+                worker.join(timeout=5)
+                blocked = worker.is_alive()
+                submit.assert_not_called()
+        finally:
+            self.manager.closing = True
+            self.manager.lock.release()
+            worker.join(timeout=5)
+        self.assertFalse(blocked, 'Expiration must finish while the long operation still holds its lock')
+        self.assertEqual(errors, [])
+        self.assertEqual(self.manager.player_access.view()['kicks'], [])
+        self.assertEqual(self.manager.player_access.view()['banned'], [])
+        self.assertNotIn('Steam_' + steam_id, (self.base / 'saves/bannedlist.txt').read_text(encoding='utf-8').splitlines())
+
+    def test_historical_backup_with_temporary_kick_is_cleaned_before_start(self):
+        self.release('one')
+        steam_id = '76561198000000001'
+        permanent = 'Steam_76561198000000002'
+        contents = ('// Server rules\n' + permanent + '\n'
+                    '// Hearth temporary kick Steam_' + steam_id + ' until 4000000000\n'
+                    'Steam_' + steam_id + '\n').encode('utf-8')
+        fixture = self.base / 'backups/historical.tar.gz'
+        with tarfile.open(fixture, 'w:gz') as archive:
+            for folder in ('saves', 'config'):
+                entry = tarfile.TarInfo(folder)
+                entry.type = tarfile.DIRTYPE
+                archive.addfile(entry)
+            for name, data in [('saves/bannedlist.txt', contents), ('manifest.json', json.dumps({'release': 'one'}).encode())]:
+                entry = tarfile.TarInfo(name)
+                entry.size = len(data)
+                archive.addfile(entry, io.BytesIO(data))
+        process = MagicMock()
+        process.poll.return_value = 0
+
+        def launch(*_):
+            self.assertEqual((self.base / 'saves/bannedlist.txt').read_text(encoding='utf-8').splitlines(), ['// Server rules', permanent])
+            return process
+
+        with patch.object(self.manager, 'metadata', return_value={'mode': 'vanilla'}), patch.object(self.manager, 'spawn', side_effect=launch) as spawn, patch('server.threading.Thread'):
+            self.manager.restore(fixture.name)
+        spawn.assert_called_once()
+        self.assertEqual(self.manager.player_access.view()['kicks'], [])
+        self.assertEqual(self.manager.player_access.view()['banned'], ['76561198000000002'])
+        self.assertEqual((self.base / 'saves/bannedlist.txt').read_text(encoding='utf-8').splitlines(), ['// Server rules', permanent])
+
     def test_backup_restore_nested_world(self):
         self.release('one')
         world = self.base / 'saves/worlds_local/North'
@@ -425,6 +509,73 @@ class HttpTests(unittest.TestCase):
         self.assertNotIn(body['url'].encode(),self.request('GET','/api/status',headers=headers)[2])
         public=json.loads(self.request('GET','/api/public')[2]);self.assertNotIn('discord',public)
         self.request('POST','/api/operations',{'command':'discord','remove':True,'events':[]},headers)
+
+    def test_players_requires_auth_and_csrf_before_changing_lists(self):
+        manager = server.Handler.manager
+        body = {'action': 'ban', 'steam_id': '76561198000000001'}
+        headers = {'Content-Type': 'application/json', 'X-Hearth': '1'}
+        with patch.object(manager.player_access, 'perform') as perform:
+            self.assertEqual(self.request('POST', '/api/players', body, headers)[0], 403)
+            headers = self.login()
+            for token in [None, 'wrong']:
+                bad = dict(headers)
+                if token is None:
+                    bad.pop('X-CSRF-Token')
+                else:
+                    bad['X-CSRF-Token'] = token
+                self.assertEqual(self.request('POST', '/api/players', body, bad)[0], 403)
+            perform.assert_not_called()
+
+    def test_player_access_changes_are_private_and_return_current_lists(self):
+        manager = server.Handler.manager
+        banned = manager.base / 'saves/bannedlist.txt'
+        original = banned.read_bytes() if banned.exists() else None
+        steam_id = '76561198000000001'
+        try:
+            headers = self.login()
+            status, _, raw = self.request('POST', '/api/players', {'action': 'ban', 'steam_id': steam_id}, headers)
+            self.assertEqual(status, 200)
+            result = json.loads(raw)
+            self.assertIsInstance(result['message'], str)
+            self.assertIn(steam_id, result['access']['banned'])
+            status = json.loads(self.request('GET', '/api/status', headers=headers)[2])
+            self.assertIn(steam_id, status['player_access']['banned'])
+            public = self.request('GET', '/api/public')[2]
+            self.assertNotIn(steam_id.encode(), public)
+            self.assertNotIn('player_access', json.loads(public))
+        finally:
+            if original is None:
+                banned.unlink(missing_ok=True)
+            else:
+                banned.write_bytes(original)
+
+    def test_player_action_lock_failure_does_not_run_or_report_success(self):
+        manager = server.Handler.manager
+        headers = self.login()
+        manager.lock.acquire()
+        try:
+            with patch.object(manager.player_access, 'perform') as perform:
+                status, _, raw = self.request('POST', '/api/players', {'action': 'admin', 'steam_id': '76561198000000001'}, headers)
+                self.assertEqual(status, 400)
+                self.assertIn('error', json.loads(raw))
+                self.assertNotIn('message', json.loads(raw))
+                perform.assert_not_called()
+        finally:
+            manager.lock.release()
+
+    def test_player_action_validation_and_write_errors_release_operation_lock(self):
+        manager = server.Handler.manager
+        headers = self.login()
+        body = {'action': 'ban', 'steam_id': '76561198000000001\nSteam_76561198000000002'}
+        self.assertEqual(self.request('POST', '/api/players', body, headers)[0], 400)
+        body['steam_id'] = '76561198000000001'
+        with patch.object(manager.player_access, 'perform', side_effect=OSError('disk full')):
+            status, _, raw = self.request('POST', '/api/players', body, headers)
+        self.assertEqual(status, 500)
+        self.assertIn('error', json.loads(raw))
+        self.assertNotIn('message', json.loads(raw))
+        self.assertTrue(manager.lock.acquire(blocking=False))
+        manager.lock.release()
 
     def test_landing_and_admin_routes(self):
         for path, marker in [('/', 'Твоя сага'), ('/admin', 'login-form'), ('/admin/', 'login-form')]:
