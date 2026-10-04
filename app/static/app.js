@@ -61,7 +61,7 @@ function renderStatus(s, notify=true){
     $('approve-update').disabled = s.busy || !pendingApproval;
     if (pendingApproval) $('compatibility-details').textContent = `Steam: Valheim ${pendingApproval.actual}. Мод: V+ ${pendingApproval.mod}. Заявлено автором: Valheim ${pendingApproval.declared}. Одобрение доступно до ${fmtTime(pendingApproval.expires)}; после перезапуска панели проверку нужно повторить.`;
     table('players-body', s.players, (tr,p) => { cell(tr, (s.online?.names.includes(p.name)?'● ':'') + p.name,true); cell(tr,p.joins); cell(tr,duration(p.seconds)); cell(tr,fmtTime(p.last_seen)); },4);
-    const kinds = {system:'Система',connection:'Подключение',action:'Действие',update:'Обновление',error:'Ошибка',backup:'Копия',restore:'Восстановление',config:'Настройки',export:'Экспорт',import:'Импорт'};
+    const kinds = {system:'Система',connection:'Подключение',action:'Действие',update:'Обновление',error:'Ошибка',backup:'Копия',restore:'Восстановление',config:'Настройки',export:'Экспорт',import:'Импорт',players:'Управление игроками'};
     table('events-body', s.events, (tr,e) => { cell(tr,fmtTime(e.ts)); cell(tr,kinds[e.kind] || e.kind); cell(tr,e.message,['connection','system'].includes(e.kind)); },3);
     $('world-files').replaceChildren();
     s.files.sort((a,b)=>b.modified-a.modified).slice(0,30).forEach(f=>{

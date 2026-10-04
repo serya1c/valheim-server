@@ -29,6 +29,7 @@ from configuration import Configuration, atomic_text, game_ports, server_mode, l
 from panel import Panel, password_hash
 import world_transfer
 from operations import Operations
+from player_access import PlayerAccess, LABELS as PLAYER_ACTION_NAMES, steam_id
 
 BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
@@ -174,6 +175,7 @@ class Manager:
         self.started = time.time()
         self.maintenance_wait_empty = False
         self.operations = Operations(self)
+        self.player_access = PlayerAccess(self)
 
     def setup_view(self):
         view = self.config.view()
@@ -282,6 +284,7 @@ class Manager:
     def start(self):
         if self.closing or self.running():
             return
+        self.player_access.cleanup(force=True)
         folder = self.active()
         config = folder / 'BepInEx/config'
         if (self.metadata() or {}).get("mode", "plus") == "plus" and not config.is_symlink():
@@ -343,10 +346,13 @@ class Manager:
         self.online = None
         self.last_poll = None
         self.last_names.clear()
+        self.player_access.cleanup(force=True)
 
     def backup(self, label='manual'):
         if self.running():
             raise RuntimeError('Для согласованной копии сервер должен быть остановлен')
+        # Temporary kicks must never become permanent bans after restoring a backup.
+        self.player_access.cleanup(force=True)
         name = time.strftime('%Y%m%d-%H%M%S') + '-' + secrets.token_hex(3) + '-' + label + '.tar.gz'
         path = self.base / 'backups' / name
         with tarfile.open(str(path) + '.tmp', 'w:gz') as tar:
@@ -549,22 +555,23 @@ class Manager:
             self.stop()
             self.backup('pre-restore')
             # Keep old directories intact until both replacements have succeeded.
-            moved = []
-            try:
-                for folder in ('saves', 'config'):
-                    old = target / (folder + '-old')
-                    (self.base / folder).rename(old)
-                    moved.append((folder, old))
-                    (target / folder).rename(self.base / folder)
-                if rollback:
-                    self.state.update(active=release_id, previous=None, rollback_backup=None, update_trial=False)
-                    self.save_state()
-            except Exception:
-                for folder, old in reversed(moved):
-                    if (self.base / folder).exists():
-                        shutil.rmtree(self.base / folder)
-                    old.rename(self.base / folder)
-                raise
+            with self.player_access.lock:
+                moved = []
+                try:
+                    for folder in ('saves', 'config'):
+                        old = target / (folder + '-old')
+                        (self.base / folder).rename(old)
+                        moved.append((folder, old))
+                        (target / folder).rename(self.base / folder)
+                    if rollback:
+                        self.state.update(active=release_id, previous=None, rollback_backup=None, update_trial=False)
+                        self.save_state()
+                except Exception:
+                    for folder, old in reversed(moved):
+                        if (self.base / folder).exists():
+                            shutil.rmtree(self.base / folder)
+                        old.rename(self.base / folder)
+                    raise
         self.store.event('restore', name)
         self.start()
 
@@ -720,6 +727,9 @@ class Manager:
                         self.submit('scheduled')
                     next_backup = time.time() + interval
             if self.panel.configured:
+                # Expiration keeps working during a long download/probe operation.
+                try:self.player_access.cleanup()
+                except Exception:self.say('Не удалось снять временный бан. Проверьте списки доступа в разделе игроков.')
                 try:self.operations.tick()
                 except Exception:self.say('Не удалось обработать очередь обслуживания')
             time.sleep(10)
@@ -731,7 +741,8 @@ class Manager:
                 s = p.stat()
                 files.append({'path': str(p.relative_to(self.base / 'saves')), 'bytes': s.st_size, 'modified': s.st_mtime})
         backups = [{'name': p.name, 'bytes': p.stat().st_size} for p in sorted((self.base / 'backups').glob('*.tar.gz'), reverse=True)]
-        return {**self.store.read(), 'operations':self.operations.view(), 'running': self.running(), 'busy': self.busy,
+        return {**self.store.read(), 'operations':self.operations.view(), 'player_access':self.player_access.view(),
+            'running': self.running(), 'busy': self.busy, 'closing':self.closing,
             'target_mode': self.config.load()['server']['mode'], 'site_url': self.config.load()['landing']['site_url'],
             'job': self.job, 'versions': self.metadata(), 'online': self.online,
             'compatibility': self.compatibility if self.compatibility and self.compatibility['expires'] > time.time() else None,
@@ -838,7 +849,7 @@ class Handler(BaseHTTPRequestHandler):
                 'players':online['count'] if fresh else None,
                 'maintenance':self.manager.operations.view()['maintenance'],
                 'game':versions.get('game'), 'mod':versions.get('mod')})
-        assets = {'/': ('landing.html', 'text/html; charset=utf-8'), '/admin': ('index.html', 'text/html; charset=utf-8'), '/admin/': ('index.html', 'text/html; charset=utf-8'), '/landing.css': ('landing.css', 'text/css; charset=utf-8'), '/landing.js': ('landing.js', 'text/javascript; charset=utf-8'), '/north.svg': ('north.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/operations.js': ('operations.js', 'text/javascript; charset=utf-8'), '/transfer.js': ('transfer.js', 'text/javascript; charset=utf-8'), '/settings.js': ('settings.js', 'text/javascript; charset=utf-8'), '/mod-ru.js': ('mod-ru.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
+        assets = {'/': ('landing.html', 'text/html; charset=utf-8'), '/admin': ('index.html', 'text/html; charset=utf-8'), '/admin/': ('index.html', 'text/html; charset=utf-8'), '/landing.css': ('landing.css', 'text/css; charset=utf-8'), '/landing.js': ('landing.js', 'text/javascript; charset=utf-8'), '/north.svg': ('north.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/operations.js': ('operations.js', 'text/javascript; charset=utf-8'), '/players.js': ('players.js', 'text/javascript; charset=utf-8'), '/transfer.js': ('transfer.js', 'text/javascript; charset=utf-8'), '/settings.js': ('settings.js', 'text/javascript; charset=utf-8'), '/mod-ru.js': ('mod-ru.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
         if self.path in assets:
             name, mime = assets[self.path]
             if name == 'landing.html':
@@ -990,6 +1001,18 @@ class Handler(BaseHTTPRequestHandler):
                     else:raise ValueError('Неизвестная операция')
                 finally:self.manager.lock.release()
                 return self.reply(200,self.manager.operations.view())
+            if self.path == '/api/players':
+                if not self.manager.lock.acquire(blocking=False):
+                    raise ValueError('Другая операция уже выполняется')
+                try:
+                    if self.manager.closing:
+                        raise ValueError('Панель останавливается')
+                    action=data.get('action')
+                    message=self.manager.player_access.perform(action, data.get('steam_id'))
+                    self.manager.store.event('players', PLAYER_ACTION_NAMES[action]+': Steam_'+steam_id(data['steam_id']))
+                    access=self.manager.player_access.view()
+                finally:self.manager.lock.release()
+                return self.reply(200, {'access':access, 'message':message})
             if self.path == '/api/action':
                 action = data.get('action')
                 if action not in {'start', 'stop', 'restart', 'backup', 'install', 'restore', 'rollback', 'configure', 'export_world', 'import_world', 'check_panel'}:
