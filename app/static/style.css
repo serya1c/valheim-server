@@ -4,3 +4,10 @@
 textarea{display:block;width:100%;margin-top:7px;border:1px solid #485349;border-radius:6px;background:#101713;color:var(--ink);padding:12px;font:inherit;resize:vertical}.settings-tabs{flex-wrap:wrap}
 
 .settings-tabs{flex-wrap:wrap}
+.player-private-text{white-space:pre-wrap;margin:6px 0 0!important}
+#health .metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+#health-process,#health-a2s{font-size:18px;overflow-wrap:anywhere}
+#health .metrics small{display:block}
+#health .two-col{margin-bottom:16px}
+@media(max-width:1100px){#health .metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:500px){#health .metrics{grid-template-columns:1fr}}

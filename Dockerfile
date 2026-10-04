@@ -3,7 +3,7 @@ ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 HOME=/home/valheim
 ARG APT_MAX_FUTURE_TIME=10
 RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources \
     && apt-get -o Acquire::Max-FutureTime=${APT_MAX_FUTURE_TIME} update && apt-get install -y --no-install-recommends \
-    ca-certificates curl lib32gcc-s1 lib32stdc++6 libstdc++6 libatomic1 libpulse0 tar \
+    ca-certificates curl tzdata lib32gcc-s1 lib32stdc++6 libstdc++6 libatomic1 libpulse0 tar \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -m -u 10001 valheim && mkdir -p /data /opt/steamcmd /app \
     && curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar -xz -C /opt/steamcmd \
