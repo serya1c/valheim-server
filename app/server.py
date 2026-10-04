@@ -28,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from configuration import Configuration, atomic_text, game_ports, server_mode, listing_required, default_world
 from panel import Panel, password_hash
 import world_transfer
+from operations import Operations
 
 BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
@@ -62,7 +63,8 @@ CONNECTION = re.compile(r'Got connection|Got character ZDOID|Closing socket|Disc
 ACTION_NAMES = {'start': 'Запуск', 'stop': 'Остановка', 'restart': 'Перезапуск',
                 'backup': 'Резервная копия', 'scheduled': 'Плановая копия',
                 'install': 'Установка обновления', 'restore': 'Восстановление мира', 'rollback': 'Полный откат',
-                'configure':'Сохранение настроек', 'export_world':'Экспорт мира', 'import_world':'Импорт мира'}
+                'configure':'Сохранение настроек', 'export_world':'Экспорт мира', 'import_world':'Импорт мира',
+                'maintenance':'Обслуживание', 'check_panel':'Проверка версии панели'}
 
 
 def atomic_json(path, value):
@@ -170,6 +172,8 @@ class Manager:
         self.state_path = base / 'state.json'
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {'active': None, 'previous': None}
         self.started = time.time()
+        self.maintenance_wait_empty = False
+        self.operations = Operations(self)
 
     def setup_view(self):
         view = self.config.view()
@@ -290,6 +294,8 @@ class Manager:
                 shutil.rmtree(config)
             config.symlink_to(self.base / 'config', target_is_directory=True)
         self.startup = {}
+        self.operations.ready = False
+        self.online = None
         self.proc = self.spawn(folder, self.base / 'saves', game_ports()[0])
         self.started = time.time()
         self.reader = threading.Thread(target=self.read_game, args=(self.proc,), daemon=True)
@@ -310,7 +316,10 @@ class Manager:
         self.online = None
         self.last_names.clear()
         self.last_poll = None
-        self.store.event('system', f'Процесс сервера завершён, код {proc.wait()}')
+        code=proc.wait()
+        self.store.event('system', f'Процесс сервера завершён, код {code}')
+        self.operations.notify('server','Сервер остановлен.')
+        if code:self.operations.notify('error','Игровой процесс завершился с ошибкой. Проверьте журнал панели.')
 
     def wait_ready(self, game, mod, timeout=180):
         self.job['message'] = 'Проверка запуска основного мира (до 180 секунд)'
@@ -446,6 +455,7 @@ class Manager:
             if approval:
                 self.store.event('update', f'Администратор одобрил Valheim {actual} + V+ {mod}; заявлено {game}')
             was_running = self.running()
+            self.guard_maintenance()
             self.stop()
             try:
                 snapshot = self.backup('pre-update')
@@ -472,6 +482,7 @@ class Manager:
                 try:
                     if old:
                         self.restore(snapshot, rollback=True)
+                        self.operations.notify('update','Выполнен автоматический откат обновления. Проверьте журнал панели.')
                         self.store.event('update', 'Автоматический откат: возвращены прежний релиз, мир и конфигурация')
                     else:
                         self.stop()
@@ -557,6 +568,14 @@ class Manager:
         self.store.event('restore', name)
         self.start()
 
+    def guard_maintenance(self):
+        if not self.maintenance_wait_empty or not self.running():return
+        try:
+            import a2s
+            if a2s.info(('127.0.0.1', game_ports()[1]), timeout=2).player_count != 0:raise ValueError()
+        except Exception:
+            raise ValueError('Обслуживание отменено: сервер больше не пуст или онлайн неизвестен') from None
+
     def submit(self, action, data=None):
         if self.closing or not self.lock.acquire(blocking=False):
             raise ValueError('Другая операция уже выполняется')
@@ -567,6 +586,7 @@ class Manager:
                 self.execute(action, data or {})
                 self.job = {'state': 'done', 'message': 'Мир импортирован. Проверьте настройки и запустите сервер.' if action == 'import_world' else 'Операция завершена'}
             except Exception as e:
+                self.operations.notify('error','Операция завершилась ошибкой. Подробности доступны администратору в журнале панели.')
                 self.say(str(e))
                 self.store.event('error', str(e))
                 self.job = {'state': 'error', 'message': str(e)}
@@ -577,7 +597,11 @@ class Manager:
 
     def execute(self, action, data):
         self.store.event('action', ACTION_NAMES.get(action, action))
-        if action == 'start':
+        if action == 'maintenance':
+            self.operations.run_pending()
+        elif action == 'check_panel':
+            self.operations.check_release()
+        elif action == 'start':
             self.start()
         elif action == 'stop':
             self.stop()
@@ -610,6 +634,9 @@ class Manager:
             self.configure(data)
         else:
             raise ValueError('Неизвестная операция')
+
+        if action in ('install','rollback'):self.operations.notify('update','Операция обновления или отката завершена. Проверьте состояние сервера в панели.')
+        if action in ('backup','scheduled'):self.operations.notify('backup','Резервная копия создана.')
 
     def configure(self, data):
         if type(data.get('restart')) is not bool:
@@ -692,6 +719,9 @@ class Manager:
                     with contextlib.suppress(ValueError):
                         self.submit('scheduled')
                     next_backup = time.time() + interval
+            if self.panel.configured:
+                try:self.operations.tick()
+                except Exception:self.say('Не удалось обработать очередь обслуживания')
             time.sleep(10)
 
     def status(self):
@@ -701,7 +731,7 @@ class Manager:
                 s = p.stat()
                 files.append({'path': str(p.relative_to(self.base / 'saves')), 'bytes': s.st_size, 'modified': s.st_mtime})
         backups = [{'name': p.name, 'bytes': p.stat().st_size} for p in sorted((self.base / 'backups').glob('*.tar.gz'), reverse=True)]
-        return {**self.store.read(), 'running': self.running(), 'busy': self.busy,
+        return {**self.store.read(), 'operations':self.operations.view(), 'running': self.running(), 'busy': self.busy,
             'target_mode': self.config.load()['server']['mode'], 'site_url': self.config.load()['landing']['site_url'],
             'job': self.job, 'versions': self.metadata(), 'online': self.online,
             'compatibility': self.compatibility if self.compatibility and self.compatibility['expires'] > time.time() else None,
@@ -806,8 +836,9 @@ class Handler(BaseHTTPRequestHandler):
                 'public_listing':listing_required() or config['server']['public'], 'site_url':landing['site_url'], 'mode':versions.get('mode', 'plus' if versions else config['server']['mode']),
                 'community_url':landing['community_url'], 'running':running,
                 'players':online['count'] if fresh else None,
+                'maintenance':self.manager.operations.view()['maintenance'],
                 'game':versions.get('game'), 'mod':versions.get('mod')})
-        assets = {'/': ('landing.html', 'text/html; charset=utf-8'), '/admin': ('index.html', 'text/html; charset=utf-8'), '/admin/': ('index.html', 'text/html; charset=utf-8'), '/landing.css': ('landing.css', 'text/css; charset=utf-8'), '/landing.js': ('landing.js', 'text/javascript; charset=utf-8'), '/north.svg': ('north.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/transfer.js': ('transfer.js', 'text/javascript; charset=utf-8'), '/settings.js': ('settings.js', 'text/javascript; charset=utf-8'), '/mod-ru.js': ('mod-ru.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
+        assets = {'/': ('landing.html', 'text/html; charset=utf-8'), '/admin': ('index.html', 'text/html; charset=utf-8'), '/admin/': ('index.html', 'text/html; charset=utf-8'), '/landing.css': ('landing.css', 'text/css; charset=utf-8'), '/landing.js': ('landing.js', 'text/javascript; charset=utf-8'), '/north.svg': ('north.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/operations.js': ('operations.js', 'text/javascript; charset=utf-8'), '/transfer.js': ('transfer.js', 'text/javascript; charset=utf-8'), '/settings.js': ('settings.js', 'text/javascript; charset=utf-8'), '/mod-ru.js': ('mod-ru.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
         if self.path in assets:
             name, mime = assets[self.path]
             if name == 'landing.html':
@@ -947,9 +978,21 @@ class Handler(BaseHTTPRequestHandler):
                         if v is session:
                             del self.sessions[k]
                 return self.reply(200, {}, cookie='session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')
+            if self.path == '/api/operations':
+                if not self.manager.lock.acquire(blocking=False):
+                    raise ValueError('Другая операция уже выполняется')
+                try:
+                    op=data.get('command')
+                    if op=='discord':self.manager.operations.configure_discord(data)
+                    elif op=='test':self.manager.operations.notify('server','Проверка уведомлений Hearth.',test=True)
+                    elif op=='schedule':self.manager.operations.schedule(data)
+                    elif op=='cancel':self.manager.operations.cancel()
+                    else:raise ValueError('Неизвестная операция')
+                finally:self.manager.lock.release()
+                return self.reply(200,self.manager.operations.view())
             if self.path == '/api/action':
                 action = data.get('action')
-                if action not in {'start', 'stop', 'restart', 'backup', 'install', 'restore', 'rollback', 'configure', 'export_world', 'import_world'}:
+                if action not in {'start', 'stop', 'restart', 'backup', 'install', 'restore', 'rollback', 'configure', 'export_world', 'import_world', 'check_panel'}:
                     raise ValueError('Неизвестная операция')
                 self.manager.submit(action, data)
                 return self.reply(202, {'accepted': True})

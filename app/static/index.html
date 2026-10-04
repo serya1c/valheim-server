@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/i18n.css"><script defer src="/i18n-catalog.js"></script><script defer src="/i18n.js"></script><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script><script defer src="/transfer.js"></script>
+  <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/i18n.css"><script defer src="/i18n-catalog.js"></script><script defer src="/i18n.js"></script><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script><script defer src="/transfer.js"></script><script defer src="/operations.js"></script>
 </head>
 <body><div class="language-switch panel-language" data-language-switch></div>
   <div id="login" class="login">
@@ -14,7 +14,7 @@
   </div>
   <div id="dashboard" hidden>
     <aside><a class="brand" href="/admin">ᛟ <b>HEARTH</b></a><p class="eyebrow">ВАШ СЕРВЕР</p><nav>
-      <a href="#overview">◈ Обзор</a><a href="#players">♙ Игроки</a><a href="#world">◇ Мир и копии</a><a href="#settings" id="settings-nav">⚙ Настройки</a><a href="#updates">↗ Обновления</a><a href="#journal">≡ Журнал</a>
+      <a href="#overview">◈ Обзор</a><a href="#players">♙ Игроки</a><a href="#world">◇ Мир и копии</a><a href="#settings" id="settings-nav">⚙ Настройки</a><a href="#updates">↗ Обновления</a><a href="#maintenance">Обслуживание</a><a href="#journal">≡ Журнал</a>
     </nav><div class="aside-bottom"><a href="/" class="quiet">← Предпросмотр сайта</a><br><a id="project-link" href="/" class="quiet" target="_blank" rel="noopener noreferrer">Сайт сервера ↗</a><br><span class="tiny">VALHEIM / ВАШ МИР</span><button id="logout" class="quiet">Выйти из панели</button></div></aside>
     <main>
       <header><span class="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ / ОБЗОР</span><span id="connection" class="pill">Подключение…</span></header>
@@ -82,7 +82,13 @@
           <div class="toolbar settings-save"><button type="button" id="config-save" disabled>Сохранить без запуска</button><button type="button" id="config-apply" class="primary" disabled>Сохранить и запустить</button></div>
         </form>
       </section>
-      <section id="updates"><div class="section-head"><h2>Обновления</h2><span class="eyebrow">ПОД ВАШИМ КОНТРОЛЕМ</span></div>
+      <section id="updates"><article class="card"><h2>Версия панели</h2><p id="panel-release"></p>
+        <div class="toolbar"><button id="panel-check">Проверить обновления панели</button><a id="panel-release-link" target="_blank" rel="noopener noreferrer" hidden>Описание релиза</a></div>
+        <p class="muted">Скачайте резервную копию, затем релиз и замените файлы проекта в прежнем каталоге. Выполните команду из этого каталога с прежним именем проекта и файлами Compose. Пересоздание контейнера перезапустит игру и отключит игроков.</p>
+        <label>Команда для вашей копии<select id="panel-compose"><option value="main">Основной Compose</option><option value="second">Вторая копия из инструкции</option></select></label>
+        <pre id="panel-command" data-i18n-skip>docker compose up -d --build</pre><button id="panel-command-copy">Скопировать команду</button>
+        <p class="tiny">Если используете свои -p или -f, сохраните их в команде. Панель не выполняет обновление автоматически.</p>
+      </article><div class="section-head"><h2>Обновления</h2><span class="eyebrow">ПОД ВАШИМ КОНТРОЛЕМ</span></div>
         <article class="card"><p id="update-mode" class="notice"></p><p>В режиме V+ сервер и мод устанавливаются парой; в ванильном режиме скачивается только игра. Перед переключением — проверка на временном мире и резервная копия. Предыдущий релиз остаётся для отката.</p>
           <form id="update-form" class="update-form"><button class="primary" type="submit">Установить последние версии ↗</button></form>
           <p class="muted">Версии выбираются автоматически: текущий стабильный сервер Steam и, для режима V+, последний стабильный релиз Valheim Plus от Grantapher вместе с BepInEx. Если версия игры отличается от указанной автором мода, после успешного запуска тестового мира появится запрос одобрения. В режиме V+ игрокам тоже нужно обновить мод.</p>
@@ -94,6 +100,29 @@
           </div>
           <div class="toolbar"><button id="rollback" data-action="rollback">↶ Откатить сервер, мод и мир</button><a href="https://github.com/Grantapher/ValheimPlus/releases" target="_blank" rel="noreferrer">Релизы Grantapher ↗</a></div>
         </article>
+      </section>
+      <section id="maintenance"><div class="section-head"><h2>Обслуживание</h2></div>
+        <article class="card"><p class="muted">Одна задача на ближайшие 30 дней. Время указано в часовом поясе вашего браузера.</p>
+          <form id="maintenance-form"><div class="settings-grid">
+            <label>Действие<select id="maintenance-operation"><option value="restart">Перезапуск</option><option value="stop">Остановка</option><option value="backup">Резервная копия</option><option value="install">Обновление игры и мода</option></select></label>
+            <label>Не раньше<input id="maintenance-at" type="datetime-local" required></label>
+            <label class="check-label"><input id="maintenance-empty" type="checkbox" checked>Дождаться пустого сервера</label>
+          </div><p class="muted">При неизвестном онлайне задача ждёт. Перед запуском требуется минута без игроков. Если ожидание выключено, операция может отключить игроков.</p>
+          <div class="toolbar"><button type="submit">Запланировать</button><button type="button" id="maintenance-cancel">Отменить задачу</button></div></form>
+          <p id="maintenance-status" role="status"></p>
+        </article>
+        <article class="card"><h3>Уведомления Discord</h3><p class="muted">Webhook хранится отдельно от игровых копий. Пустое поле сохраняет прежний адрес. Уведомления не содержат пароли и игровой журнал.</p>
+          <form id="discord-form"><label>Webhook Discord<input id="discord-url" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/..."></label>
+          <label class="check-label"><input id="discord-remove" type="checkbox">Удалить сохранённый webhook</label>
+          <div class="settings-grid">
+            <label class="check-label"><input type="checkbox" data-discord="server">Запуск и остановка</label>
+            <label class="check-label"><input type="checkbox" data-discord="update">Обновления и откат</label>
+            <label class="check-label"><input type="checkbox" data-discord="backup">Резервные копии</label>
+            <label class="check-label"><input type="checkbox" data-discord="maintenance">Обслуживание</label>
+            <label class="check-label"><input type="checkbox" data-discord="error">Ошибки операций</label>
+          </div><div class="toolbar"><button type="submit">Сохранить уведомления</button><button type="button" id="discord-test">Отправить проверку</button></div></form>
+          <p id="discord-status" role="status"></p>
+        </article><p id="operations-message" role="status"></p>
       </section>
       <section id="journal"><div class="section-head"><h2>Журнал</h2><span class="eyebrow">ПОДКЛЮЧЕНИЯ И ДЕЙСТВИЯ</span></div>
         <div class="table-wrap events"><table><thead><tr><th>Время</th><th>Тип</th><th>Событие</th></tr></thead><tbody id="events-body"></tbody></table></div>
