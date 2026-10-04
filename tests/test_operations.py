@@ -132,9 +132,12 @@ class OperationsTests(unittest.TestCase):
             self.ops.check_release()
         self.assertTrue(self.ops.view()['release']['error'])
     def test_update_guard_rechecks_live_player_count(self):
-        fake=MagicMock();fake.maintenance_wait_empty=True;fake.running.return_value=True
+        fake=MagicMock();fake.maintenance_wait_empty=True;fake.maintenance_deadline=None;fake.running.return_value=True
         with patch.dict(sys.modules,{'a2s':MagicMock()}) as modules:
             modules['a2s'].info.return_value.player_count=1
             with self.assertRaises(ValueError):server.Manager.guard_maintenance(fake)
             modules['a2s'].info.return_value.player_count=0
             server.Manager.guard_maintenance(fake)
+            fake.maintenance_deadline=time.time()-1
+            with self.assertRaisesRegex(ValueError,'Окно обслуживания истекло'):
+                server.Manager.guard_maintenance(fake)

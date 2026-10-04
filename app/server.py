@@ -30,6 +30,7 @@ from panel import Panel, password_hash
 import world_transfer
 from operations import Operations
 from player_access import PlayerAccess, LABELS as PLAYER_ACTION_NAMES, steam_id
+from health import HealthMonitor
 
 BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
@@ -174,8 +175,10 @@ class Manager:
         self.state = json.loads(self.state_path.read_text()) if self.state_path.exists() else {'active': None, 'previous': None}
         self.started = time.time()
         self.maintenance_wait_empty = False
+        self.maintenance_deadline = None
         self.operations = Operations(self)
         self.player_access = PlayerAccess(self)
+        self.health = HealthMonitor(self)
 
     def setup_view(self):
         view = self.config.view()
@@ -364,6 +367,7 @@ class Manager:
                 tar.add(p, arcname='manifest.json')
         Path(str(path) + '.tmp').replace(path)
         self.store.event('backup', name)
+        self.health.record_backup(name)
         return name
 
     def prune_backups(self):
@@ -576,12 +580,16 @@ class Manager:
         self.start()
 
     def guard_maintenance(self):
+        if self.maintenance_deadline is not None and time.time() >= self.maintenance_deadline:
+            raise ValueError('Окно обслуживания истекло: задача пропущена без отключения игроков')
         if not self.maintenance_wait_empty or not self.running():return
         try:
             import a2s
             if a2s.info(('127.0.0.1', game_ports()[1]), timeout=2).player_count != 0:raise ValueError()
         except Exception:
             raise ValueError('Обслуживание отменено: сервер больше не пуст или онлайн неизвестен') from None
+        if self.maintenance_deadline is not None and time.time() >= self.maintenance_deadline:
+            raise ValueError('Окно обслуживания истекло: задача пропущена без отключения игроков')
 
     def submit(self, action, data=None):
         if self.closing or not self.lock.acquire(blocking=False):
@@ -611,12 +619,15 @@ class Manager:
         elif action == 'start':
             self.start()
         elif action == 'stop':
+            self.guard_maintenance()
             self.stop()
         elif action == 'restart':
+            self.guard_maintenance()
             self.stop()
             self.start()
         elif action in ('backup', 'scheduled'):
             was_running = self.running()
+            self.guard_maintenance()
             self.stop()
             try:
                 self.backup('scheduled' if action == 'scheduled' else 'manual')
@@ -732,6 +743,7 @@ class Manager:
                 except Exception:self.say('Не удалось снять временный бан. Проверьте списки доступа в разделе игроков.')
                 try:self.operations.tick()
                 except Exception:self.say('Не удалось обработать очередь обслуживания')
+            self.health.tick()
             time.sleep(10)
 
     def status(self):
@@ -741,7 +753,7 @@ class Manager:
                 s = p.stat()
                 files.append({'path': str(p.relative_to(self.base / 'saves')), 'bytes': s.st_size, 'modified': s.st_mtime})
         backups = [{'name': p.name, 'bytes': p.stat().st_size} for p in sorted((self.base / 'backups').glob('*.tar.gz'), reverse=True)]
-        return {**self.store.read(), 'operations':self.operations.view(), 'player_access':self.player_access.view(),
+        return {**self.store.read(), 'operations':self.operations.view(), 'player_access':self.player_access.view(), 'health':self.health.view(),
             'running': self.running(), 'busy': self.busy, 'closing':self.closing,
             'target_mode': self.config.load()['server']['mode'], 'site_url': self.config.load()['landing']['site_url'],
             'job': self.job, 'versions': self.metadata(), 'online': self.online,
@@ -850,6 +862,7 @@ class Handler(BaseHTTPRequestHandler):
                 'maintenance':self.manager.operations.view()['maintenance'],
                 'game':versions.get('game'), 'mod':versions.get('mod')})
         assets = {'/': ('landing.html', 'text/html; charset=utf-8'), '/admin': ('index.html', 'text/html; charset=utf-8'), '/admin/': ('index.html', 'text/html; charset=utf-8'), '/landing.css': ('landing.css', 'text/css; charset=utf-8'), '/landing.js': ('landing.js', 'text/javascript; charset=utf-8'), '/north.svg': ('north.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/operations.js': ('operations.js', 'text/javascript; charset=utf-8'), '/players.js': ('players.js', 'text/javascript; charset=utf-8'), '/transfer.js': ('transfer.js', 'text/javascript; charset=utf-8'), '/settings.js': ('settings.js', 'text/javascript; charset=utf-8'), '/mod-ru.js': ('mod-ru.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
+        assets['/health.js'] = ('health.js', 'text/javascript; charset=utf-8')
         if self.path in assets:
             name, mime = assets[self.path]
             if name == 'landing.html':
@@ -945,6 +958,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get('Content-Length', '0'))
             limit = 262144 if self.path in ('/api/action', '/api/setup') else 4096
+            if self.path == '/api/players':limit = 16384
             if not 0 < length <= limit:
                 raise ValueError('Недопустимый размер запроса')
             data = json.loads(self.rfile.read(length))
@@ -998,6 +1012,8 @@ class Handler(BaseHTTPRequestHandler):
                     elif op=='test':self.manager.operations.notify('server','Проверка уведомлений Hearth.',test=True)
                     elif op=='schedule':self.manager.operations.schedule(data)
                     elif op=='cancel':self.manager.operations.cancel()
+                    elif op=='routine_save':self.manager.operations.save_routine(data)
+                    elif op in ('routine_toggle','routine_remove'):self.manager.operations.routine_command(data)
                     else:raise ValueError('Неизвестная операция')
                 finally:self.manager.lock.release()
                 return self.reply(200,self.manager.operations.view())
@@ -1008,7 +1024,8 @@ class Handler(BaseHTTPRequestHandler):
                     if self.manager.closing:
                         raise ValueError('Панель останавливается')
                     action=data.get('action')
-                    message=self.manager.player_access.perform(action, data.get('steam_id'))
+                    options={key:data[key] for key in ('reason','duration_hours','until','alias','notes') if key in data}
+                    message=self.manager.player_access.perform(action, data.get('steam_id'), **options)
                     self.manager.store.event('players', PLAYER_ACTION_NAMES[action]+': Steam_'+steam_id(data['steam_id']))
                     access=self.manager.player_access.view()
                 finally:self.manager.lock.release()

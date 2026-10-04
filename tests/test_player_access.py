@@ -1,4 +1,5 @@
 import os
+import json
 from pathlib import Path
 import sys
 import tempfile
@@ -20,7 +21,7 @@ class PlayerAccessTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.base = Path(self.tmp.name)
         (self.base / 'saves').mkdir()
-        self.manager = SimpleNamespace(base=self.base, running=Mock(return_value=True), store=Mock())
+        self.manager = SimpleNamespace(base=self.base, running=Mock(return_value=True), store=Mock(), operations=Mock())
         self.access = PlayerAccess(self.manager)
         self.admins = self.base / 'saves/adminlist.txt'
         self.bans = self.base / 'saves/bannedlist.txt'
@@ -168,6 +169,137 @@ class PlayerAccessTests(unittest.TestCase):
                 self.access.perform('ban', STEAM_ID)
         self.assertEqual(self.bans.read_text(encoding='utf-8'), external)
         self.assertEqual(list((self.base / 'saves').glob('*.tmp')), [])
+
+    def test_timed_ban_survives_force_cleanup_then_expires_after_restart(self):
+        with patch('player_access.time.time', return_value=1000):
+            self.access.perform('ban', STEAM_ID, duration_hours=1, reason='Repeated griefing')
+            self.access.cleanup(force=True)
+        native = self.bans.read_text(encoding='utf-8')
+        self.assertNotIn('Repeated griefing', native)
+        lines = native.splitlines()
+        lines.sort(key=lambda line: not line.startswith('//'))
+        self.bans.write_text('\n'.join(lines) + '\n', encoding='utf-8')
+        restarted = PlayerAccess(self.manager)
+        self.assertEqual(restarted.view()['timed_bans'], [{'steam_id':STEAM_ID, 'until':4600, 'reason':'Repeated griefing'}])
+        self.assertEqual(restarted.view()['banned'], [])
+        with patch('player_access.time.time', return_value=4600):
+            restarted.cleanup()
+            restarted.cleanup()
+        self.assertEqual(restarted.view()['timed_bans'], [])
+        self.assertNotIn(NATIVE_ID, self.bans.read_text(encoding='utf-8'))
+        self.assertEqual([item['action'] for item in restarted.view()['history']], ['expiry', 'ban'])
+        self.assertEqual(self.manager.operations.notify.call_count, 2)
+
+    def test_timed_ban_does_not_weaken_permanent_or_external_bans(self):
+        for native in [STEAM_ID, NATIVE_ID]:
+            self.bans.write_text(native + '\n', encoding='utf-8')
+            original = self.bans.read_bytes()
+            with self.assertRaises(ValueError):
+                self.access.perform('ban', STEAM_ID, duration_hours=1)
+            self.assertEqual(self.bans.read_bytes(), original)
+        self.bans.write_text('', encoding='utf-8')
+        with patch('player_access.time.time', return_value=1000):
+            self.access.perform('ban', STEAM_ID, duration_hours=1)
+        with self.bans.open('a', encoding='utf-8') as file:
+            file.write(STEAM_ID + '\n' + NATIVE_ID + '\n// External ban\n')
+        with patch('player_access.time.time', return_value=4601):
+            self.access.cleanup()
+        self.assertEqual(self.bans.read_text(encoding='utf-8').splitlines(), [STEAM_ID, NATIVE_ID, '// External ban'])
+        self.assertEqual(self.access.view()['banned'], [STEAM_ID])
+
+    def test_kick_can_be_promoted_to_timed_or_permanent_ban(self):
+        with patch('player_access.time.time', return_value=1000):
+            self.access.perform('kick', STEAM_ID)
+            self.access.act('ban', STEAM_ID, until=2000, reason='Temporary restriction')
+            self.access.cleanup(force=True)
+            self.assertEqual(self.access.view()['kicks'], [])
+            self.assertEqual(self.access.view()['timed_bans'][0]['until'], 2000)
+            self.access.perform('ban', STEAM_ID, reason='Permanent restriction')
+        with patch('player_access.time.time', return_value=5000):
+            self.access.cleanup(force=True)
+        self.assertEqual(self.access.view()['timed_bans'], [])
+        self.assertEqual(self.access.view()['banned'], [STEAM_ID])
+        self.assertEqual(self.access.view()['ban_details'][STEAM_ID]['reason'], 'Permanent restriction')
+
+    def test_invalid_ban_duration_and_text_never_change_files(self):
+        self.bans.write_text('// Original\n', encoding='utf-8')
+        original = self.bans.read_bytes()
+        bad = [{'duration_hours':value} for value in [True, '1', 0, -1, 1/120, 8761, float('inf'), float('nan')]]
+        bad += [{'until':value} for value in [True, '2000', 1001, 1000+366*86400]]
+        bad += [{'duration_hours':1,'until':2000}, {'reason':'a'*301}, {'reason':'reason\nforged log'}, {'reason':'reason\u0085forged log'}, {'reason':None}]
+        with patch('player_access.time.time', return_value=1000):
+            for options in bad:
+                with self.subTest(options=options), self.assertRaises(ValueError):
+                    self.access.perform('ban', STEAM_ID, **options)
+        self.assertEqual(self.bans.read_bytes(), original)
+        self.assertFalse((self.base / 'moderation.json').exists())
+
+    def test_private_profiles_and_history_persist_outside_game_saves(self):
+        self.access.perform('profile', STEAM_ID, alias='Private alias', notes='Private note\nSecond line')
+        self.access.perform('ban', STEAM_ID, reason='Public reason @everyone <@123>')
+        self.access.perform('unban', STEAM_ID)
+        view = PlayerAccess(self.manager).view()
+        self.assertEqual(view['profiles'][STEAM_ID], {'alias':'Private alias', 'notes':'Private note\nSecond line'})
+        self.assertEqual([item['action'] for item in view['history']], ['unban', 'ban', 'profile'])
+        native = self.bans.read_text(encoding='utf-8')
+        self.assertNotIn('Private', native)
+        self.assertFalse((self.base / 'saves/moderation.json').exists())
+        self.assertTrue((self.base / 'moderation.json').is_file())
+        notifications = str(self.manager.operations.notify.call_args_list)
+        self.assertIn('Public reason', notifications)
+        self.assertNotIn('Private alias', notifications)
+        self.assertNotIn('Private note', notifications)
+        self.assertNotIn('@everyone', notifications)
+        self.assertNotIn('<@123>', notifications)
+
+    def test_restored_native_timer_controls_expiry_without_using_newer_private_reason(self):
+        with patch('player_access.time.time', return_value=1000):
+            self.access.perform('ban', STEAM_ID, until=2000, reason='Reason from the newer server state')
+        native = '// Hearth timed ban Steam_' + STEAM_ID + ' until 3000\n' + NATIVE_ID + '\n'
+        self.bans.write_text(native, encoding='utf-8')
+        self.assertEqual(self.access.view()['timed_bans'], [{'steam_id':STEAM_ID,'until':3000,'reason':''}])
+        with patch('player_access.time.time', return_value=2500):
+            PlayerAccess(self.manager).cleanup(force=True)
+        self.assertIn(NATIVE_ID, self.bans.read_text(encoding='utf-8'))
+        with patch('player_access.time.time', return_value=3000):
+            self.access.cleanup()
+        self.assertEqual(self.access.view()['timed_bans'], [])
+        self.assertNotIn('Reason from the newer server state', self.manager.operations.notify.call_args.args[1])
+
+    def test_metadata_save_failure_reverts_native_action_and_does_not_notify(self):
+        self.bans.write_text('// Existing rule\nSteam_' + OTHER_ID + '\n', encoding='utf-8')
+        original = self.bans.read_bytes()
+        replace = os.replace
+
+        def fail_metadata(source, target):
+            if Path(target) == self.base / 'moderation.json':
+                raise OSError('secret disk error')
+            return replace(source, target)
+
+        with patch('player_access.os.replace', side_effect=fail_metadata):
+            with self.assertRaises(ValueError) as caught:
+                self.access.perform('ban', STEAM_ID, reason='Reason')
+        self.assertNotIn('secret disk error', str(caught.exception))
+        self.assertEqual(self.bans.read_bytes(), original)
+        self.assertEqual(self.access.view()['history'], [])
+        self.manager.operations.notify.assert_not_called()
+
+    def test_history_is_bounded_and_corrupt_metadata_prevents_unaudited_actions(self):
+        self.access.perform('admin', STEAM_ID)
+        path = self.base / 'moderation.json'
+        data = json.loads(path.read_text(encoding='utf-8'))
+        data['history'] = data['history'] * 200
+        path.write_text(json.dumps(data), encoding='utf-8')
+        self.access.perform('unadmin', STEAM_ID)
+        view = self.access.view()
+        self.assertEqual(len(view['history']), 200)
+        self.assertEqual(view['history'][0]['action'], 'unadmin')
+        path.write_text('{ broken: secret', encoding='utf-8')
+        with self.assertRaises(ValueError) as caught:
+            self.access.perform('ban', STEAM_ID)
+        self.assertNotIn('secret', str(caught.exception))
+        self.assertFalse(self.bans.exists())
+        self.assertTrue(self.access.view()['error'])
 
 
 if __name__ == '__main__':

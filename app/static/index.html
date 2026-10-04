@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/i18n.css"><script defer src="/i18n-catalog.js"></script><script defer src="/i18n.js"></script><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script><script defer src="/transfer.js"></script><script defer src="/operations.js"></script><script defer src="/players.js"></script>
+  <script defer src="/health.js"></script>
 </head>
 <body><div class="language-switch panel-language" data-language-switch></div>
   <div id="login" class="login">
@@ -14,7 +15,7 @@
   </div>
   <div id="dashboard" hidden>
     <aside><a class="brand" href="/admin">ᛟ <b>HEARTH</b></a><p class="eyebrow">ВАШ СЕРВЕР</p><nav>
-      <a href="#overview">◈ Обзор</a><a href="#players">♙ Игроки</a><a href="#world">◇ Мир и копии</a><a href="#settings" id="settings-nav">⚙ Настройки</a><a href="#updates">↗ Обновления</a><a href="#maintenance">Обслуживание</a><a href="#journal">≡ Журнал</a>
+      <a href="#overview">◈ Обзор</a><a href="#health">♡ Здоровье сервера</a><a href="#players">♙ Игроки</a><a href="#world">◇ Мир и копии</a><a href="#settings" id="settings-nav">⚙ Настройки</a><a href="#updates">↗ Обновления</a><a href="#maintenance">Обслуживание</a><a href="#journal">≡ Журнал</a>
     </nav><div class="aside-bottom"><a href="/" class="quiet">← Предпросмотр сайта</a><br><a id="project-link" href="/" class="quiet" target="_blank" rel="noopener noreferrer">Сайт сервера ↗</a><br><span class="tiny">VALHEIM / ВАШ МИР</span><button id="logout" class="quiet">Выйти из панели</button></div></aside>
     <main>
       <header><span class="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ / ОБЗОР</span><span id="connection" class="pill">Подключение…</span></header>
@@ -24,19 +25,43 @@
         <div class="toolbar"><button data-action="start" class="primary">▶ Запустить</button><button data-action="stop">■ Остановить</button><button data-action="restart">↻ Перезапустить</button><button data-action="backup">↓ Создать копию</button></div>
         <div id="job" class="notice" role="status">Готово</div>
       </section>
+      <section id="health"><div class="section-head"><h2>Здоровье сервера</h2><span id="health-sampled" class="tiny"></span></div>
+        <p class="muted">Показатели обновляются примерно раз в 10 секунд. Запущенный процесс и ответ игрового сервера проверяются отдельно.</p>
+        <div class="metrics">
+          <article><p>Игровой процесс</p><strong id="health-process">—</strong><small>Valheim внутри контейнера</small></article>
+          <article><p>Ответ сервера A2S</p><strong id="health-a2s">—</strong><small id="health-a2s-age"></small><small>Свежий ответ за последние 30 секунд</small></article>
+          <article><p>Процессор игры</p><strong id="health-cpu">—</strong><small>100% соответствует одному ядру; возможны значения выше 100%</small></article>
+          <article><p>Память игры</p><strong id="health-game-memory">—</strong><small>Память игрового процесса в RAM</small></article>
+          <article><p>Память контейнера</p><strong id="health-container-memory">—</strong><small id="health-container-limit"></small><small>Использование и лимит, если задан в Docker</small></article>
+          <article><p>Диск данных</p><strong id="health-disk">—</strong><small id="health-disk-total"></small><small>Свободно / всего на файловой системе тома</small></article>
+        </div>
+        <div class="two-col"><article class="card"><h3>Последнее изменение сохранения мира</h3><p id="health-world" data-i18n-skip></p><p id="health-save">—</p><p class="tiny">Время изменения файлов выбранного мира. Целостность и игровой прогресс здесь не проверяются.</p></article><article class="card"><h3>Последняя успешная резервная копия</h3><p id="health-backup">—</p><p class="tiny">Завершённый архив панели, который ещё хранится на сервере.</p></article></div>
+        <article class="card"><h3>Диагностика и действия</h3><div id="health-diagnostics" class="file-list" role="status"></div></article>
+      </section>
       <section id="players"><div class="section-head"><h2>Игроки</h2><span class="eyebrow">ИСТОРИЯ ПРИКЛЮЧЕНИЙ</span></div>
         <article class="card"><h3>Доступ игроков по SteamID64</h3>
           <p class="muted">Используйте точный SteamID64 аккаунта: 17 цифр или Steam_ и 17 цифр. Ники персонажей из истории ниже не определяют SteamID. Блокировки и игровые права можно менять, даже когда игрок не в сети.</p>
           <form id="player-access-form"><div class="settings-grid">
             <label>SteamID64<input id="player-steam-id" type="text" maxlength="23" pattern="(?:Steam_)?[0-9]{17}" placeholder="76561198000000000" autocomplete="off" spellcheck="false" required aria-describedby="player-id-help"><small id="player-id-help">Идентификатор аккаунта Steam, не ник и не ссылка на профиль.</small></label>
             <label>Действие<select id="player-access-action"><option value="ban">Заблокировать</option><option value="unban">Снять блокировку</option><option value="admin">Назначить игровым администратором</option><option value="unadmin">Снять игровые права администратора</option><option value="kick">Отключить через временную блокировку</option></select></label>
+            <div id="player-ban-options" class="settings-grid"><label>Причина бана<input id="player-ban-reason" maxlength="300" autocomplete="off"><small>До 300 символов. При включённых уведомлениях о модерации причина отправляется в Discord.</small></label>
+            <label>Срок бана, часов<input id="player-ban-hours" type="number" min="0.0167" max="8760" step="any"><small>От 1 минуты до 365 дней. Пусто — постоянный бан. По истечении срока панель снимет свою временную запись.</small></label></div>
           </div><button type="submit" id="player-access-apply" disabled>Применить к SteamID</button></form>
           <p id="player-kick-unavailable" class="tiny" hidden>Для отключения игрока сервер должен быть запущен</p>
           <p class="tiny">Это права администратора игры, не доступ к веб-панели. После изменения прав переподключитесь к серверу. Отключение выполняется через временный бан на 30 секунд. Valheim применяет списки с задержкой до 15 секунд. Постоянный бан не снимается. Ответ панели подтверждает изменение списков; фактическое отключение проверяйте в игре.</p>
           <p id="player-access-message" role="status"></p><p id="player-access-error" role="alert" class="muted"></p>
           <div class="two-col"><div><h3>Игровые администраторы</h3><div id="player-admins" class="file-list"></div><p id="player-other-admins" class="tiny"></p></div><div><h3>Заблокированные SteamID</h3><div id="player-banned" class="file-list"></div><p id="player-other-bans" class="tiny"></p></div></div>
           <h3>Временные блокировки для отключения</h3><div id="player-kicks" class="file-list"></div>
+          <h3>Баны на определённый срок</h3><div id="player-timed-bans" class="file-list"></div>
           <p class="tiny">Записи других форматов в игровых списках сохраняются. Панель показывает их количество и управляет только SteamID64.</p>
+        </article>
+        <article class="card"><h3>Карточки игроков по SteamID</h3><p class="muted">Псевдоним задаётся вручную и не меняет имя персонажа. Заметки доступны только в панели и не отправляются в Discord.</p>
+          <form id="player-profile-form"><div class="settings-grid">
+            <label>SteamID64<input id="player-profile-steam-id" maxlength="23" pattern="(?:Steam_)?[0-9]{17}" required autocomplete="off" spellcheck="false"></label>
+            <label>Псевдоним<input id="player-profile-alias" maxlength="80" autocomplete="off"></label>
+            <label>Заметки<textarea id="player-profile-notes" maxlength="2000" rows="3"></textarea><small>До 2000 символов. Пустые псевдоним и заметки удаляют карточку.</small></label>
+          </div><button id="player-profile-save" type="submit">Сохранить карточку</button></form><p id="player-profile-message" role="status"></p><div id="player-profiles" class="file-list"></div>
+          <h3>История модерации</h3><p class="tiny">Последние 200 действий по SteamID, включая автоматическое истечение банов. История и заметки хранятся отдельно от игровых архивов.</p><div id="player-history" class="file-list"></div>
         </article>
         <p class="muted">Входы — из лога игры. Время — оценка по A2S с момента установки панели. Если сервер скрывает имена, время не учитывается. Одинаковые имена объединяются.</p>
         <div class="table-wrap"><table><thead><tr><th>Персонаж</th><th>Входов</th><th>Наблюдаемое время</th><th>Последняя активность</th></tr></thead><tbody id="players-body"></tbody></table></div>
@@ -124,6 +149,32 @@
           <div class="toolbar"><button type="submit">Запланировать</button><button type="button" id="maintenance-cancel">Отменить задачу</button></div></form>
           <p id="maintenance-status" role="status"></p>
         </article>
+<article class="card"><h3>Повторяющееся обслуживание</h3>
+  <p class="muted">Ежедневные и еженедельные задачи выполняются по выбранному часовому поясу. Требуется минута без игроков. Если окно ожидания истекло, запуск пропускается без отключения игроков. Пропущенные во время остановки панели запуски не наверстываются.</p>
+  <form id="routine-form"><input id="routine-id" type="hidden"><div class="settings-grid">
+    <label>Действие<select id="routine-operation"><option value="restart">Перезапуск</option><option value="backup">Резервная копия</option><option value="stop">Остановка</option><option value="install">Обновление игры и мода</option></select></label>
+    <label>Повторение<select id="routine-frequency"><option value="daily">Ежедневно</option><option value="weekly">Еженедельно</option></select></label>
+    <label>Время<input id="routine-time" type="time" value="04:00" required></label>
+    <label>Часовой пояс IANA<input id="routine-timezone" type="text" value="UTC" maxlength="100" placeholder="Asia/Krasnoyarsk" required data-i18n-skip></label>
+    <label>Максимальное ожидание, минут<input id="routine-max-wait" type="number" min="2" max="1440" value="120" required><small>От 2 до 1440 минут, включая минуту без игроков.</small></label>
+    <label class="check-label"><input id="routine-enabled" type="checkbox" checked>Расписание включено</label>
+  </div><div id="routine-weekdays" class="settings-grid" hidden>
+    <label class="check-label"><input type="checkbox" data-routine-day="0" checked>Понедельник</label>
+    <label class="check-label"><input type="checkbox" data-routine-day="1" checked>Вторник</label>
+    <label class="check-label"><input type="checkbox" data-routine-day="2" checked>Среда</label>
+    <label class="check-label"><input type="checkbox" data-routine-day="3" checked>Четверг</label>
+    <label class="check-label"><input type="checkbox" data-routine-day="4" checked>Пятница</label>
+    <label class="check-label"><input type="checkbox" data-routine-day="5">Суббота</label>
+    <label class="check-label"><input type="checkbox" data-routine-day="6">Воскресенье</label>
+  </div><div class="toolbar"><button type="submit">Сохранить расписание</button><button id="routine-reset" type="button">Новое расписание</button></div></form>
+  <div id="routine-list"></div>
+</article>
+<article class="card"><h3>Ближайшие запуски · 7 дней</h3>
+  <p class="muted">Время каждого запуска показано в часовом поясе его расписания. Несколько задач выполняются последовательно. При переводе часов несуществующее местное время пропускается, повторяющееся время выполняется один раз.</p>
+  <div class="table-wrap"><table><thead><tr><th>Время</th><th>Действие</th><th>Часовой пояс</th><th>Состояние</th></tr></thead><tbody id="routine-upcoming"></tbody></table></div>
+  <h3>Последние запуски расписаний</h3><p class="tiny">История показана в часовом поясе браузера.</p><div class="table-wrap"><table><thead><tr><th>Назначенное время</th><th>Действие</th><th>Результат</th></tr></thead><tbody id="routine-history"></tbody></table></div>
+</article>
+
         <article class="card"><h3>Уведомления Discord</h3><p class="muted">Webhook хранится отдельно от игровых копий. Пустое поле сохраняет прежний адрес. Уведомления не содержат пароли и игровой журнал.</p>
           <form id="discord-form"><label>Webhook Discord<input id="discord-url" type="password" autocomplete="off" placeholder="https://discord.com/api/webhooks/..."></label>
           <label class="check-label"><input id="discord-remove" type="checkbox">Удалить сохранённый webhook</label>
@@ -132,6 +183,7 @@
             <label class="check-label"><input type="checkbox" data-discord="update">Обновления и откат</label>
             <label class="check-label"><input type="checkbox" data-discord="backup">Резервные копии</label>
             <label class="check-label"><input type="checkbox" data-discord="maintenance">Обслуживание</label>
+            <label class="check-label"><input type="checkbox" data-discord="moderation">Баны, снятие банов и причины</label>
             <label class="check-label"><input type="checkbox" data-discord="error">Ошибки операций</label>
           </div><div class="toolbar"><button type="submit">Сохранить уведомления</button><button type="button" id="discord-test">Отправить проверку</button></div></form>
           <p id="discord-status" role="status"></p>
