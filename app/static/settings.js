@@ -20,7 +20,7 @@ function loadWorldRules(name){
 }
 function renderMod(){
   $('mod-fields').replaceChildren();const mod=configData.mod;
-  $('mod-info').textContent=configData.server.mode==='vanilla'?'Выбран ванильный режим. Конфигурация V+ сохранена для возврата, но в ванильном релизе не используется.':mod.available?`${mod.filename} · Параметров: ${mod.entries.length}. Технические имена оставлены рядом с переводом.`:'Файл мода пока не создан. Запустите установленный V+ один раз и нажмите «Перечитать».';
+  $('mod-info').textContent=configData.server.mode==='modded'?'Выбран BepInEx. Дополнительные моды устанавливаются в разделе «Моды»; редактор V+ в этом режиме не используется.':configData.server.mode==='vanilla'?'Выбран ванильный режим. Конфигурация V+ сохранена для возврата, но в ванильном релизе не используется.':mod.available?`${mod.filename} · Параметров: ${mod.entries.length}. Технические имена оставлены рядом с переводом.`:'Файл мода пока не создан. Запустите установленный V+ один раз и нажмите «Перечитать».';
   const groups=new Map();
   mod.entries.forEach(e=>{
     if(!groups.has(e.section)){const d=document.createElement('details');d.className='mod-section';const s=document.createElement('summary');s.textContent=MOD_SECTIONS_RU[e.section]||`Раздел ${e.section}`;d.append(s);const grid=document.createElement('div');grid.className='settings-grid';d.append(grid);groups.set(e.section,{d,grid});$('mod-fields').append(d);}

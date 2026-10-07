@@ -14,7 +14,7 @@ $('world-inspect').onclick=async()=>{
   try{
     const response=await fetch('/api/world-import',{method:'POST',headers:{'Content-Type':'application/zip','X-Hearth':'1','X-CSRF-Token':csrf},body:file});
     const result=await response.json();if(!response.ok)throw new Error(result.error||'Не удалось загрузить архив');
-    importPreview=result;transferNotice(`Проверено: мир «${result.world}», Valheim ${result.game}, ${result.mode==='plus'?'V+ '+result.mod+' с конфигом':'без модов'}. Подтверждение действует 1 час. После импорта запустите сервер вручную.`);
+    importPreview=result;transferNotice(`Проверено: мир «${result.world}», Valheim ${result.game}, ${result.mode==='plus'?'V+ '+result.mod+' с конфигом':result.mode==='modded'?'BepInEx':'без модов'}. Подтверждение действует 1 час. После импорта запустите сервер вручную.`);
   }catch(e){transferNotice(e.message,true);}finally{transferUploading=false;transferButtons();}
 };
 $('world-import').onclick=async()=>{

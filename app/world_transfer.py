@@ -78,7 +78,7 @@ def read_package(path, target):
                     raise ValueError('Архив не является экспортом мира Hearth: неверный состав файлов')
                 validate_chunk_set(chunk_names)
             world_name(meta.get('world'))
-            if meta.get('mode') not in ('plus','vanilla') or not isinstance(meta.get('game'),str) or not re.fullmatch(r'\d+\.\d+\.\d+',meta['game']):
+            if meta.get('mode') not in ('plus','vanilla','modded') or not isinstance(meta.get('game'),str) or not re.fullmatch(r'\d+\.\d+\.\d+',meta['game']):
                 raise ValueError('Не указаны режим и версия игры')
             if (meta['mode']=='plus') != ('valheim_plus.cfg' in names):
                 raise ValueError('Для мира V+ обязателен конфиг мода')
@@ -101,7 +101,7 @@ def compatible(manager, meta):
     if not installed:
         raise ValueError('Сначала установите сервер во вкладке «Обновления»')
     if installed.get('mode','plus') != meta['mode']:
-        raise ValueError('Режимы не совпадают. Сначала установите '+('Valheim Plus' if meta['mode']=='plus' else 'ванильный сервер'))
+        raise ValueError('Режимы не совпадают. Сначала установите '+{'plus':'Valheim Plus','modded':'BepInEx','vanilla':'ванильный сервер'}[meta['mode']])
     if installed.get('game') != meta['game'] or meta['mode']=='plus' and installed.get('mod') != meta['mod']:
         raise ValueError('Для переноса нужны одинаковые версии игры и V+ на обоих серверах. Обновите их перед экспортом')
 

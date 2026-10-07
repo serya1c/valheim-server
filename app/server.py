@@ -22,7 +22,7 @@ import tempfile
 import threading
 import time
 import urllib.request
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, parse_qs
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from configuration import Configuration, atomic_text, game_ports, server_mode, listing_required, default_world
@@ -31,6 +31,7 @@ import world_transfer
 from operations import Operations
 from player_access import PlayerAccess, LABELS as PLAYER_ACTION_NAMES, steam_id
 from health import HealthMonitor
+from mods import ModManager
 
 BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
@@ -66,7 +67,10 @@ ACTION_NAMES = {'start': 'Запуск', 'stop': 'Остановка', 'restart'
                 'backup': 'Резервная копия', 'scheduled': 'Плановая копия',
                 'install': 'Установка обновления', 'restore': 'Восстановление мира', 'rollback': 'Полный откат',
                 'configure':'Сохранение настроек', 'export_world':'Экспорт мира', 'import_world':'Импорт мира',
-                'maintenance':'Обслуживание', 'check_panel':'Проверка версии панели'}
+                'maintenance':'Обслуживание', 'check_panel':'Проверка версии панели',
+                'mod_install':'Установка мода', 'mod_upload':'Установка ZIP мода',
+                'mod_update':'Обновление мода', 'mod_toggle':'Переключение мода', 'mod_remove':'Удаление мода',
+                'recover_mods':'Откат набора модов после прерванной операции'}
 
 
 def atomic_json(path, value):
@@ -179,6 +183,11 @@ class Manager:
         self.operations = Operations(self)
         self.player_access = PlayerAccess(self)
         self.health = HealthMonitor(self)
+        self.mods = ModManager(base, external_versions=self.mod_external_versions)
+        self.client_mods = None
+        client_meta = base / 'client-mods.json'
+        if client_meta.is_file() and (base / 'client-mods.zip').is_file():
+            self.client_mods = json.loads(client_meta.read_text())
 
     def setup_view(self):
         view = self.config.view()
@@ -225,6 +234,8 @@ class Manager:
             self.store.event('config', 'Первичная настройка завершена')
 
     def boot_action(self):
+        if self.state.get('mods_trial'):
+            return 'recover_mods'
         if self.state.get('update_trial') and self.state.get('previous'):
             return 'rollback'
         return 'start' if self.state.get('active') else 'install'
@@ -260,10 +271,14 @@ class Manager:
         env.pop('PANEL_PASSWORD', None)
         mode = mode or json.loads((folder / 'hearth.json').read_text()).get('mode', 'plus')
         env.update(SteamAppId='892970', LD_LIBRARY_PATH=f'{folder}/linux64')
-        for key in ('LD_PRELOAD', 'DOORSTOP_ENABLED', 'DOORSTOP_TARGET_ASSEMBLY'):
+        for key in ('LD_PRELOAD', 'DOORSTOP_ENABLED', 'DOORSTOP_ENABLE', 'DOORSTOP_TARGET_ASSEMBLY'):
             env.pop(key, None)
         if mode == 'plus':
             env.update(DOORSTOP_ENABLED='1', DOORSTOP_TARGET_ASSEMBLY=str(folder / 'BepInEx/core/BepInEx.Preloader.dll'),
+                       LD_LIBRARY_PATH=f'{folder}/linux64:{folder}/doorstop_libs', LD_PRELOAD=str(folder / 'doorstop_libs/libdoorstop_x64.so'))
+        elif mode == 'modded':
+            env.update(DOORSTOP_ENABLE='1', DOORSTOP_ENABLED='1',
+                       DOORSTOP_TARGET_ASSEMBLY=str(folder / 'BepInEx/core/BepInEx.Preloader.dll'),
                        LD_LIBRARY_PATH=f'{folder}/linux64:{folder}/doorstop_libs', LD_PRELOAD=str(folder / 'doorstop_libs/libdoorstop_x64.so'))
         exe = folder / 'valheim_server.x86_64'
         exe.chmod(exe.stat().st_mode | 0o111)
@@ -290,7 +305,7 @@ class Manager:
         self.player_access.cleanup(force=True)
         folder = self.active()
         config = folder / 'BepInEx/config'
-        if (self.metadata() or {}).get("mode", "plus") == "plus" and not config.is_symlink():
+        if (self.metadata() or {}).get("mode", "plus") != "vanilla" and not config.is_symlink():
             if config.exists():
                 for source in config.rglob('*'):
                     dest = self.base / 'config' / source.relative_to(config)
@@ -299,6 +314,8 @@ class Manager:
                         shutil.copy2(source, dest)
                 shutil.rmtree(config)
             config.symlink_to(self.base / 'config', target_is_directory=True)
+        if (self.metadata() or {}).get('mode', 'plus') != 'vanilla':
+            self.mods.materialize(folder)
         self.startup = {}
         self.operations.ready = False
         self.online = None
@@ -334,7 +351,8 @@ class Manager:
         while time.monotonic() < deadline:
             if self.closing or not self.running() or self.startup.get('error'):
                 raise RuntimeError('Новый сервер остановился или сообщил ошибку загрузки: ' + str(self.startup))
-            if self.startup.get('ready') and self.startup.get('game') == game and (mod is None or self.startup.get('mod') == mod and self.startup.get('bepinex')):
+            loader_ready = (self.metadata() or {}).get('mode') != 'modded' or self.startup.get('bepinex')
+            if loader_ready and self.startup.get('ready') and self.startup.get('game') == game and (mod is None or self.startup.get('mod') == mod and self.startup.get('bepinex')):
                 stable_since = stable_since or time.monotonic()
                 if time.monotonic() - stable_since >= 5:
                     return
@@ -361,6 +379,7 @@ class Manager:
         with tarfile.open(str(path) + '.tmp', 'w:gz') as tar:
             tar.add(self.base / 'saves', arcname='saves')
             tar.add(self.base / 'config', arcname='config')
+            tar.add(self.base / 'mods', arcname='mods')
             with tempfile.TemporaryDirectory(dir=self.base) as tmp:
                 p = Path(tmp) / 'manifest.json'
                 atomic_json(p, {'release': self.state.get('active'), 'versions': self.metadata(), 'created': time.time()})
@@ -416,6 +435,9 @@ class Manager:
         stage = self.base / 'releases' / release_id
         stage.mkdir()
         installed = False
+        release_mods = self.mods
+        staged_mods = stage / '.hearth-mods-stage'
+        previous_mods = stage / '.hearth-mods-before'
         try:
             self.job['message'] = 'Загрузка сервера Steam в отдельный каталог'
             self.say(self.job['message'])
@@ -443,6 +465,14 @@ class Manager:
                     raise ValueError('SHA-256 мода не совпадает')
                 safe_unzip(archive, stage)
                 archive.unlink()
+            elif mode == 'modded':
+                self.job['message'] = 'Установка BepInEx для собственных модов'
+                shutil.copytree(self.base / 'mods', staged_mods / 'mods')
+                release_mods = ModManager(staged_mods, external_versions={})
+                release_mods.ensure_loader(stage, refresh=True)
+            if mode != 'vanilla':
+                release_mods.materialize(stage, external_versions={'ValheimPlus': mod} if mode == 'plus' else {})
+                release_mods.client_archive(include_loader=mode == 'modded')
             if self.closing:
                 raise RuntimeError('Установка отменена: контейнер останавливается')
             expected = game
@@ -451,13 +481,13 @@ class Manager:
                     raise ValueError('Состав обновления изменился. Нужно новое одобрение.')
                 expected = approval['actual']
             try:
-                probed = self.probe(stage, expected, mod)
+                probed = self.probe(stage, expected, mod, mode=mode) if mode == 'modded' else self.probe(stage, expected, mod)
             except CompatibilityApprovalRequired as mismatch:
                 self.compatibility = {'token': secrets.token_urlsafe(32), 'declared': game,
                     'actual': mismatch.actual, 'mod': mod, 'sha256': digest, 'expires': time.time() + 1800}
                 self.store.event('update', f'Ожидает одобрения: Valheim {mismatch.actual}, V+ {mod}; автор указал {game}')
                 raise RuntimeError(f'Steam загрузил Valheim {mismatch.actual}, автор V+ {mod} указал {game}. Тестовый мир запустился. Одобрите эту пару во вкладке «Обновления». Рабочий сервер не изменён.') from None
-            actual = probed if mode == 'vanilla' else expected
+            actual = probed if mode != 'plus' else expected
             if self.closing:
                 raise RuntimeError('Установка отменена: контейнер останавливается')
             atomic_json(stage / 'hearth.json', {'mode': mode, 'game': actual, 'mod': mod, 'mod_sha256': digest, 'installed': time.time(),
@@ -473,6 +503,18 @@ class Manager:
                 if was_running:
                     self.start()
                 raise
+            if mode == 'modded':
+                try:
+                    (self.base / 'mods').rename(previous_mods)
+                    (staged_mods / 'mods').rename(self.base / 'mods')
+                    self.mods = ModManager(self.base, external_versions=self.mod_external_versions)
+                except Exception:
+                    if previous_mods.exists():
+                        if (self.base / 'mods').exists(): shutil.rmtree(self.base / 'mods')
+                        previous_mods.rename(self.base / 'mods')
+                    self.mods = ModManager(self.base, external_versions=self.mod_external_versions)
+                    if was_running: self.start()
+                    raise
             old = self.state.get('active')
             old_state = self.state.copy()
             self.state.update(active=release_id, previous=old, rollback_backup=snapshot, update_trial=bool(old))
@@ -480,6 +522,10 @@ class Manager:
                 self.save_state()
             except Exception:
                 self.state = old_state
+                if previous_mods.exists():
+                    shutil.rmtree(self.base / 'mods')
+                    previous_mods.rename(self.base / 'mods')
+                    self.mods = ModManager(self.base, external_versions=self.mod_external_versions)
                 if was_running:
                     self.start()
                 raise
@@ -487,6 +533,7 @@ class Manager:
             try:
                 self.start()
                 self.wait_ready(actual, mod)
+                self.publish_client_mods()
             except Exception as error:
                 self.say('Неудачный запуск обновления: ' + str(error))
                 try:
@@ -503,13 +550,16 @@ class Manager:
             self.save_state()
             self.store.event('update', f'Установлен Valheim {actual}, режим {mode}; запуск подтверждён, предыдущий релиз сохранён')
         finally:
+            shutil.rmtree(staged_mods, ignore_errors=True)
+            shutil.rmtree(previous_mods, ignore_errors=True)
             if not installed:
                 shutil.rmtree(stage)
 
-    def probe(self, stage, game, mod):
+    def probe(self, stage, game, mod, mode=None):
         self.job['message'] = 'Проверка реальной версии на временном мире (до 180 секунд)'
         with tempfile.TemporaryDirectory(prefix='probe-', dir=self.base) as tmp:
-            p = self.spawn(stage, Path(tmp), 2476 if {2466, 2467}.intersection(game_ports()) else 2466, probe=True, mode='plus' if mod else 'vanilla')
+            mode = mode or ('plus' if mod else 'vanilla')
+            p = self.spawn(stage, Path(tmp), 2476 if {2466, 2467}.intersection(game_ports()) else 2466, probe=True, mode=mode)
             markers = {}
             done = threading.Event()
             def read():
@@ -523,7 +573,7 @@ class Manager:
             reader.start()
             try:
                 done.wait(180)
-                if p.poll() is not None or markers.get('error') or not markers.get('ready') or (mod is not None and (markers.get('mod') != mod or not markers.get('bepinex'))) or not VERSION.fullmatch(markers.get('game', '')):
+                if p.poll() is not None or markers.get('error') or not markers.get('ready') or (mode == 'modded' and not markers.get('bepinex')) or (mod is not None and (markers.get('mod') != mod or not markers.get('bepinex'))) or not VERSION.fullmatch(markers.get('game', '')):
                     raise RuntimeError(f'Тестовый мир не прошёл проверку запуска: {markers}. Рабочий сервер не изменён.')
                 if game is not None and markers['game'] != game:
                     raise CompatibilityApprovalRequired(markers['game'])
@@ -562,7 +612,8 @@ class Manager:
             with self.player_access.lock:
                 moved = []
                 try:
-                    for folder in ('saves', 'config'):
+                    folders = ('saves', 'config', 'mods') if (target / 'mods').is_dir() else ('saves', 'config')
+                    for folder in folders:
                         old = target / (folder + '-old')
                         (self.base / folder).rename(old)
                         moved.append((folder, old))
@@ -577,7 +628,116 @@ class Manager:
                         old.rename(self.base / folder)
                     raise
         self.store.event('restore', name)
+        self.mods = ModManager(self.base, external_versions=self.mod_external_versions)
+        self.publish_client_mods()
         self.start()
+
+    def mod_external_versions(self):
+        versions = self.metadata() or {}
+        return {'ValheimPlus': versions.get('mod')} if versions.get('mode', 'plus') == 'plus' else {}
+
+    def mods_view(self):
+        mode = (self.metadata() or {}).get('mode', 'plus' if self.metadata() else None)
+        return {**self.mods.view(), 'available': mode in ('plus', 'modded'),
+                'client_url': '/downloads/Hearth-Client-Mods.zip' if self.public_client_mods() else None}
+
+    def public_client_mods(self):
+        mode = (self.metadata() or {}).get('mode', 'plus' if self.metadata() else None)
+        if self.client_mods and mode in ('plus', 'modded') and self.client_mods.get('kind') == ('overlay' if mode == 'plus' else 'full'):
+            return self.client_mods
+        return None
+
+    def publish_client_mods(self):
+        mode = (self.metadata() or {}).get('mode', 'plus' if self.metadata() else None)
+        archive = self.mods.client_archive(include_loader=mode == 'modded') if mode in ('plus', 'modded') else None
+        if archive is None:
+            self.client_mods = None
+            (self.base / 'client-mods.json').unlink(missing_ok=True)
+            (self.base / 'client-mods.zip').unlink(missing_ok=True)
+            return
+        raw = archive.read_bytes()
+        if not 0 < len(raw) <= 128 * 1024 * 1024:
+            raise ValueError('Клиентский набор модов превышает 128 МБ')
+        digest = hashlib.sha256(raw).hexdigest()
+        target = self.base / 'client-mods.zip'
+        tmp = target.with_suffix('.tmp')
+        tmp.write_bytes(raw)
+        tmp.replace(target)
+        info = {'url': '/downloads/Hearth-Client-Mods.zip', 'sha256': digest,
+                'revision': digest, 'size': len(raw), 'kind': 'overlay' if mode == 'plus' else 'full',
+                'packages': [{k: p[k] for k in ('id', 'name', 'version')} for p in self.mods.view()['packages']
+                             if p['enabled'] and p['scope'] in ('client', 'both')]}
+        atomic_json(self.base / 'client-mods.json', info)
+        self.client_mods = info
+
+    def change_mods(self, action, data):
+        versions = self.metadata() or {}
+        versions.setdefault('mode', 'plus' if versions else None)
+        if versions['mode'] not in ('plus', 'modded'):
+            raise ValueError('Сначала установите сервер в режиме Valheim Plus или BepInEx')
+        # Download and validate in isolation while the running world remains untouched.
+        with tempfile.TemporaryDirectory(prefix='mods-change-', dir=self.base) as tmp:
+            staged_base = Path(tmp)
+            shutil.copytree(self.base / 'mods', staged_base / 'mods')
+            candidate = ModManager(staged_base, external_versions=self.mod_external_versions)
+            if action == 'mod_install':
+                candidate.install(data.get('source'), data.get('scope', 'both'))
+            elif action == 'mod_upload':
+                try:
+                    candidate.upload(Path(data['path']), data.get('name', 'Custom'), data.get('scope', 'both'))
+                finally:
+                    Path(data['path']).unlink(missing_ok=True)
+            elif action == 'mod_update': candidate.update(data.get('id'))
+            elif action == 'mod_toggle': candidate.set_enabled(data.get('id'), data.get('enabled'))
+            elif action == 'mod_remove': candidate.remove(data.get('id'))
+            else: raise ValueError('Неизвестная операция с модами')
+            # Build the public package before stopping players; publishing may still roll back.
+            candidate.client_archive(include_loader=versions['mode'] == 'modded')
+            if self.closing:
+                raise ValueError('Установка мода отменена: контейнер останавливается')
+            was_running = self.running()
+            self.guard_maintenance()
+            self.stop()
+            try:
+                snapshot = self.backup('pre-mods')
+            except Exception:
+                if was_running: self.start()
+                raise
+            old = staged_base / 'previous-mods'
+            old_state = self.state.copy()
+            started_candidate = False
+            try:
+                self.state['mods_trial'] = snapshot
+                self.save_state()
+                (self.base / 'mods').rename(old)
+                (staged_base / 'mods').rename(self.base / 'mods')
+                self.mods = ModManager(self.base, external_versions=self.mod_external_versions)
+                self.mods.materialize(self.active())
+                self.publish_client_mods()
+                if was_running:
+                    started_candidate = True
+                    self.start()
+                    self.wait_ready(versions['game'], versions.get('mod'))
+                self.state.pop('mods_trial', None)
+                self.save_state()
+            except Exception as error:
+                try:
+                    self.stop()
+                    if old.exists():
+                        if (self.base / 'mods').exists(): shutil.rmtree(self.base / 'mods')
+                        old.rename(self.base / 'mods')
+                    self.mods = ModManager(self.base, external_versions=self.mod_external_versions)
+                    self.mods.materialize(self.active())
+                    self.publish_client_mods()
+                    # A failed game start can write to the world: restore it too.
+                    if started_candidate: self.restore(snapshot)
+                    elif was_running: self.start()
+                    self.state = old_state
+                    self.save_state()
+                except Exception as recovery_error:
+                    raise RuntimeError(f'Изменение модов завершилось ошибкой; откат не завершён: {recovery_error}. Копия: {snapshot}') from error
+                raise RuntimeError('Изменение модов отменено; сохранена прежняя сборка. ' + str(error)) from error
+            self.store.event('mods', 'Набор модов обновлён; резервная копия: ' + snapshot)
 
     def guard_maintenance(self):
         if self.maintenance_deadline is not None and time.time() >= self.maintenance_deadline:
@@ -594,6 +754,14 @@ class Manager:
     def submit(self, action, data=None):
         if self.closing or not self.lock.acquire(blocking=False):
             raise ValueError('Другая операция уже выполняется')
+        try:
+            self.submit_locked(action, data)
+        except Exception:
+            self.lock.release()
+            raise
+
+    def submit_locked(self, action, data=None):
+        """Start a worker with the mutation lock already owned by the caller."""
         self.busy = True
         self.job = {'state': 'running', 'message': ACTION_NAMES.get(action, action)}
         def work():
@@ -606,14 +774,27 @@ class Manager:
                 self.store.event('error', str(e))
                 self.job = {'state': 'error', 'message': str(e)}
             finally:
-                self.busy = False
-                self.lock.release()
-        threading.Thread(target=work, daemon=True).start()
+                try:
+                    if action == 'mod_upload' and data and data.get('path'):
+                        with contextlib.suppress(OSError):
+                            Path(data['path']).unlink(missing_ok=True)
+                finally:
+                    self.busy = False
+                    self.lock.release()
+        try:
+            threading.Thread(target=work, daemon=True).start()
+        except Exception:
+            self.busy = False
+            raise
 
     def execute(self, action, data):
         self.store.event('action', ACTION_NAMES.get(action, action))
         if action == 'maintenance':
             self.operations.run_pending()
+        elif action == 'recover_mods':
+            self.restore(self.state['mods_trial'])
+            self.state.pop('mods_trial', None)
+            self.save_state()
         elif action == 'check_panel':
             self.operations.check_release()
         elif action == 'start':
@@ -648,6 +829,8 @@ class Manager:
             world_transfer.export_world(self)
         elif action == 'import_world':
             world_transfer.import_world(self, data.get('token'))
+        elif action in ('mod_install', 'mod_upload', 'mod_update', 'mod_toggle', 'mod_remove'):
+            self.change_mods(action, data)
         elif action == 'configure':
             self.configure(data)
         else:
@@ -824,6 +1007,24 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(409, {'error':'Сначала завершите первоначальную настройку'})
         if self.path == '/api/setup' or self.path == '/setup':
             return self.reply(409, {'error':'Первичная настройка уже завершена; войдите в /admin'})
+        if self.path == '/downloads/Hearth-Client-Mods.zip':
+            if self.manager.busy or not self.manager.public_client_mods():
+                return self.reply(409, {'error': 'Набор модов пока недоступен. Повторите после завершения операции.'})
+            try:
+                source = (self.manager.base / 'client-mods.zip').open('rb')
+            except FileNotFoundError:
+                return self.reply(404, {'error': 'Набор модов пока недоступен'})
+            with source:
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/zip')
+                self.send_header('Content-Length', str(os.fstat(source.fileno()).st_size))
+                self.send_header('Content-Disposition', 'attachment; filename="Hearth-Client-Mods.zip"')
+                self.send_header('Cache-Control', 'no-store')
+                self.send_header('X-Content-Type-Options', 'nosniff')
+                self.send_header('X-Robots-Tag', 'noindex, nofollow')
+                self.end_headers()
+                shutil.copyfileobj(source, self.wfile)
+            return
         if self.path in {'/downloads/Loki-Mod-Installer.exe', '/downloads/Loki-Mod-Installer.exe.sha256',
                          '/downloads/Loki-Mod-Installer-Linux.sh', '/downloads/Loki-Mod-Installer-Linux.sh.sha256'}:
             name = self.path.rsplit('/', 1)[1]
@@ -860,9 +1061,12 @@ class Handler(BaseHTTPRequestHandler):
                 'community_url':landing['community_url'], 'running':running,
                 'players':online['count'] if fresh else None,
                 'maintenance':self.manager.operations.view()['maintenance'],
-                'game':versions.get('game'), 'mod':versions.get('mod')})
+                'game':versions.get('game'), 'mod':versions.get('mod'),
+                'client_mods': self.manager.public_client_mods()})
         assets = {'/': ('landing.html', 'text/html; charset=utf-8'), '/admin': ('index.html', 'text/html; charset=utf-8'), '/admin/': ('index.html', 'text/html; charset=utf-8'), '/landing.css': ('landing.css', 'text/css; charset=utf-8'), '/landing.js': ('landing.js', 'text/javascript; charset=utf-8'), '/north.svg': ('north.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/operations.js': ('operations.js', 'text/javascript; charset=utf-8'), '/players.js': ('players.js', 'text/javascript; charset=utf-8'), '/transfer.js': ('transfer.js', 'text/javascript; charset=utf-8'), '/settings.js': ('settings.js', 'text/javascript; charset=utf-8'), '/mod-ru.js': ('mod-ru.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
         assets['/health.js'] = ('health.js', 'text/javascript; charset=utf-8')
+        assets['/mods.js'] = ('mods.js', 'text/javascript; charset=utf-8')
+        assets['/mods.css'] = ('mods.css', 'text/css; charset=utf-8')
         if self.path in assets:
             name, mime = assets[self.path]
             if name == 'landing.html':
@@ -870,15 +1074,16 @@ class Handler(BaseHTTPRequestHandler):
                 landing = config['landing']
                 versions = self.manager.metadata() or {}
                 mode = versions.get('mode', 'plus' if versions else config['server']['mode'])
-                values = {'SITE_URL':landing['site_url'], 'MODE_LABEL':'Valheim Plus' if mode == 'plus' else 'Ванильный сервер',
+                values = {'SITE_URL':landing['site_url'], 'MODE_LABEL':{'plus':'Valheim Plus','modded':'BepInEx · Моды','vanilla':'Ванильный сервер'}[mode],
                     'LISTING_HIDDEN':'' if listing_required() or config['server']['public'] else 'hidden',
-                    'PLUS_HIDDEN':'' if mode == 'plus' else 'hidden', 'VANILLA_HIDDEN':'hidden' if mode == 'plus' else '',
+                    'PLUS_HIDDEN':'' if mode == 'plus' else 'hidden', 'VANILLA_HIDDEN':'' if mode == 'vanilla' else 'hidden',
+                    'MODDED_HIDDEN':'' if mode == 'modded' else 'hidden', 'MODS_HIDDEN':'' if mode != 'vanilla' else 'hidden',
                     'SITE_TITLE':landing['title'] or config['server']['name'],
                     'SITE_DESCRIPTION':landing['description'],
                     'SERVER_ADDRESS':landing['address'] or 'Адрес скоро появится',
                     'LISTING_NAME':self.manager.config.advertised_name()}
                 template = (Path(__file__).parent / 'static' / name).read_text(encoding='utf-8-sig')
-                body = re.sub(r'\{\{(SITE_TITLE|SITE_DESCRIPTION|SERVER_ADDRESS|LISTING_NAME|SITE_URL|MODE_LABEL|PLUS_HIDDEN|VANILLA_HIDDEN|LISTING_HIDDEN)\}\}', lambda m: html.escape(values[m[1]], quote=True), template)
+                body = re.sub(r'\{\{(SITE_TITLE|SITE_DESCRIPTION|SERVER_ADDRESS|LISTING_NAME|SITE_URL|MODE_LABEL|PLUS_HIDDEN|VANILLA_HIDDEN|MODDED_HIDDEN|MODS_HIDDEN|LISTING_HIDDEN)\}\}', lambda m: html.escape(values[m[1]], quote=True), template)
                 return self.reply(200, body.encode(), mime)
             return self.reply(200, (Path(__file__).parent / 'static' / name).read_bytes(), mime)
         session = self.session()
@@ -888,6 +1093,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, {'csrf': session['csrf']})
         if self.path == '/api/status':
             return self.reply(200, self.manager.status())
+        if self.path == '/api/mods':
+            return self.reply(200, self.manager.mods_view())
         if self.path == '/api/config':
             try:
                 return self.reply(200, {**self.manager.config.view(), 'panel':self.manager.panel.view(), 'panel_revision':self.manager.panel.revision()})
@@ -949,7 +1156,57 @@ class Handler(BaseHTTPRequestHandler):
             self.manager.lock.release()
             self.connection.settimeout(15)
 
+    def upload_mod(self):
+        session = self.session()
+        if not self.manager.panel.configured or not session or self.headers.get('X-Hearth') != '1' or not hmac.compare_digest(self.headers.get('X-CSRF-Token', ''), session['csrf']):
+            self.close_connection = True
+            return self.reply(403, {'error': 'Войдите в панель и повторите загрузку'})
+        if self.headers.get('Content-Type') != 'application/zip':
+            self.close_connection = True
+            return self.reply(400, {'error': 'Ожидается ZIP-архив мода'})
+        if self.manager.closing or not self.manager.lock.acquire(blocking=False):
+            self.close_connection = True
+            return self.reply(409, {'error': 'Дождитесь завершения другой операции'})
+        path = None
+        transferred = False
+        try:
+            params = parse_qs(urlsplit(self.path).query, max_num_fields=2)
+            length = int(self.headers.get('Content-Length', '0'))
+            if not 0 < length <= 128 * 1024 * 1024:
+                raise ValueError('ZIP мода: от 1 байта до 128 МБ')
+            self.connection.settimeout(120)
+            fd, filename = tempfile.mkstemp(prefix='mod-upload-', suffix='.zip', dir=self.manager.base)
+            path = Path(filename)
+            with os.fdopen(fd, 'wb') as target:
+                remaining = length
+                while remaining:
+                    chunk = self.rfile.read(min(1024 * 1024, remaining))
+                    if not chunk: raise ValueError('Загрузка ZIP прервана')
+                    target.write(chunk)
+                    remaining -= len(chunk)
+            data = {'path': str(path), 'name': params.get('name', ['Custom'])[0], 'scope': params.get('scope', ['both'])[0]}
+            # Transfer ownership of the mutation lock directly to the worker.
+            if self.manager.closing:
+                raise ValueError('Загрузка отменена: контейнер останавливается')
+            self.manager.submit_locked('mod_upload', data)
+            transferred = True
+            path = None
+            return self.reply(202, {'ok': True})
+        except (ValueError, OSError) as e:
+            self.close_connection = True
+            return self.reply(400, {'error': str(e)})
+        finally:
+            try:
+                if path:
+                    with contextlib.suppress(OSError): path.unlink(missing_ok=True)
+            finally:
+                if not transferred:
+                    self.manager.lock.release()
+                self.connection.settimeout(15)
+
     def do_POST(self):
+        if urlsplit(self.path).path == '/api/mods/upload':
+            return self.upload_mod()
         if self.path == '/api/world-import':
             return self.upload_world()
         # Non-simple header forces a same-origin request; no CORS is enabled.
@@ -1032,7 +1289,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(200, {'access':access, 'message':message})
             if self.path == '/api/action':
                 action = data.get('action')
-                if action not in {'start', 'stop', 'restart', 'backup', 'install', 'restore', 'rollback', 'configure', 'export_world', 'import_world', 'check_panel'}:
+                if action not in {'start', 'stop', 'restart', 'backup', 'install', 'restore', 'rollback', 'configure', 'export_world', 'import_world', 'check_panel', 'mod_install', 'mod_update', 'mod_toggle', 'mod_remove'}:
                     raise ValueError('Неизвестная операция')
                 self.manager.submit(action, data)
                 return self.reply(202, {'accepted': True})

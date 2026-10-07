@@ -594,7 +594,7 @@ class HttpTests(unittest.TestCase):
             page=self.request('GET','/')[2].decode()
             self.assertIn('rel="canonical" href="https://north.example.org/"',page)
             self.assertIn('Ванильный сервер',page)
-            self.assertIn('<article data-plus hidden>',page)
+            self.assertIn('<article data-mods hidden>',page)
             self.assertNotIn('loki.ach-play.ru',page)
             self.assertIn('https://north.example.org/sitemap.xml',self.request('GET','/robots.txt')[2].decode())
             self.assertIn('<loc>https://north.example.org/</loc>',self.request('GET','/sitemap.xml')[2].decode())
@@ -607,7 +607,7 @@ class HttpTests(unittest.TestCase):
             status, _, raw = self.request('GET','/api/public')
         data = json.loads(raw)
         self.assertEqual(status,200)
-        self.assertEqual(set(data), {'title','description','description_en','address','community_url','running','players','game','mod','server_name','mode','site_url','public_listing','maintenance'})
+        self.assertEqual(set(data), {'title','description','description_en','address','community_url','running','players','game','mod','server_name','mode','site_url','public_listing','maintenance','client_mods'})
         self.assertNotIn('must-not-leak', raw.decode())
         self.assertNotIn('password',raw.decode())
 
