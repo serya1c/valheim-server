@@ -326,6 +326,16 @@ class ModTests(unittest.TestCase):
         with patch('mods.MAX_FILE', 8), self.assertRaises(ValueError):
             self.upload({'TooBig.dll': b'MZ' * 20})
 
+    def test_client_bundle_limits_preserve_published_archive(self):
+        self.add('Author-World')
+        self.manager.install('Author-World')
+        archive = self.manager.client_archive()
+        original = archive.read_bytes()
+        for limit, value in (('MAX_ARCHIVE', 64), ('MAX_CLIENT_FILES', 1)):
+            with self.subTest(limit=limit), patch('mods.' + limit, value), self.assertRaisesRegex(ValueError, 'ограничения установщика'):
+                self.manager.client_archive()
+            self.assertEqual(archive.read_bytes(), original)
+
 
 if __name__ == '__main__':
     unittest.main()

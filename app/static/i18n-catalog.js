@@ -1446,7 +1446,9 @@ window.HEARTH_EN = {
   "Ожидается ZIP-архив мода": "A mod ZIP archive is required",
   "ZIP мода: от 1 байта до 128 МБ": "Mod ZIP size: from 1 byte to 128 MiB",
   "Загрузка ZIP прервана": "ZIP upload interrupted",
-  "Загрузка отменена: контейнер останавливается": "Upload cancelled: the container is stopping"
+  "Загрузка отменена: контейнер останавливается": "Upload cancelled: the container is stopping",
+  "Дополнительные моды в экспорт мира не входят. Установите тот же набор на принимающем сервере перед запуском.": "Additional mods are not included in a world export. Install the same collection on the receiving server before starting the game.",
+  "Клиентский набор превышает ограничения установщика: 128 МиБ ZIP, 512 МиБ после распаковки или 5000 файлов": "The client collection exceeds installer limits: 128 MiB ZIP, 512 MiB extracted, or 5000 files"
 };
 window.HEARTH_PATTERNS = [
   [

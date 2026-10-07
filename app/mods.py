@@ -29,6 +29,7 @@ MAX_FILE = 64 * 1024 * 1024
 MAX_FILES = 4096
 MAX_PACKAGES = 64
 MAX_TRANSACTION = 512 * 1024 * 1024
+MAX_CLIENT_FILES = 5000
 MAX_JSON = 2 * 1024 * 1024
 SCOPES = {'server', 'client', 'both'}
 IDENT = re.compile(r'([A-Za-z0-9_]{1,100})-([A-Za-z0-9_]{1,100})(?:-(\d+\.\d+\.\d+(?:\.\d+)?))?\Z')
@@ -764,6 +765,10 @@ class ModManager:
                               'loader_version': loader['version'] if loader else None,
                               'packages': [_public(package) for package in packages]}
                     put(archive, 'hearth-mods.json', json.dumps(public, ensure_ascii=False, sort_keys=True).encode('utf-8'))
+                with zipfile.ZipFile(temporary) as completed:
+                    if (temporary.stat().st_size > MAX_ARCHIVE or len(completed.infolist()) > MAX_CLIENT_FILES
+                            or sum(entry.file_size for entry in completed.infolist()) > MAX_TRANSACTION):
+                        raise ValueError('Клиентский набор превышает ограничения установщика: 128 МиБ ZIP, 512 МиБ после распаковки или 5000 файлов')
                 temporary.replace(target)
             finally:
                 temporary.unlink(missing_ok=True)
