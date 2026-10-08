@@ -120,6 +120,8 @@ Archive validation checks paths, links, duplicate entries, case conflicts, manif
 | Total stored package content | 512 MiB |
 | Public client package | 128 MiB compressed, 512 MiB extracted, 5,000 entries |
 
+Installers also limit one operation to 5,000 file changes. This includes the V+ base and removal of obsolete files from the previous collection, so a ZIP near its entry limit may still be rejected. Installation is cancelled before changing game files; reduce the collection or install the required mods another way.
+
 Dependencies specify exact versions. Updating a package may also update its dependencies; if another enabled package requires the old version, the entire change is rejected. Only `denikson`'s BepInExPack 5.4 is supported, managed separately by the panel. A dependency on Valheim Plus must exactly match the installed V+ version. These requirements are checked again before mode changes and game updates.
 
 Archive validation restricts where files can be installed; it does not prove a DLL is safe or compatible with gameplay. Check the author's requirements for clients, game versions, and other mods.
