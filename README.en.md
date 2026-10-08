@@ -90,7 +90,7 @@ Disconnection uses a short temporary ban and takes effect with a delay while the
 
 Install the bundled **Hearth Admin (ValheimAdminRu)** under **Mods** to add it to the server and client collection. Its in-game **F8** menu supports RU / EN and Owner, Moderator, and Builder roles. In **Game tools**, the Hearth administrator selects an online executor by SteamID for travel, player assistance, spawning, terrain, the super hammer, and building. Web access does not change that player's in-game role.
 
-These tools require BepInEx or Valheim Plus and matching mod versions on the server and players' clients; they are unavailable in vanilla mode. Builds are checked against Valheim **1.0.16 / 1.0.17** libraries; live gameplay has not been verified. Try the tools on a world copy first. [Read about permissions and saved data](docs/administration.en.md#hearth-admin).
+These tools require BepInEx or Valheim Plus and matching mod versions on the server and players' clients; they are unavailable in vanilla mode. The mod targets Valheim **1.0.16 / 1.0.17**. The project maintainer confirmed in-game testing before the Hearth 1.6.0 release. [Read about permissions and saved data](docs/administration.en.md#hearth-admin).
 
 ![Game tools with an executor and a saved point selected](docs/screenshots/game-admin-en.jpg)
 
