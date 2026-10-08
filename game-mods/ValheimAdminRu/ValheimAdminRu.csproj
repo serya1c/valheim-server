@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>ValheimAdminRu</AssemblyName>
+    <RootNamespace>ValheimAdminRu</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Version>0.4.0</Version>
+    <GenerateDependencyFile>false</GenerateDependencyFile>
+    <ValheimDir Condition="'$(ValheimDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimDir>
+    <ManagedDir Condition="'$(ManagedDir)' == ''">$(ValheimDir)\valheim_Data\Managed</ManagedDir>
+    <BepInExCore Condition="'$(BepInExCore)' == ''">$(ValheimDir)\BepInEx\core</BepInExCore>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="tests/**/*.cs" />
+    <Reference Include="BepInEx"><HintPath>$(BepInExCore)\BepInEx.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(BepInExCore)\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="$(ManagedDir)\assembly_valheim.dll"><Private>false</Private></Reference>
+    <Reference Include="$(ManagedDir)\assembly_utils.dll"><Private>false</Private></Reference>
+    <Reference Include="$(ManagedDir)\assembly_guiutils.dll"><Private>false</Private></Reference>
+    <Reference Include="$(ManagedDir)\gui_framework.dll"><Private>false</Private></Reference>
+    <Reference Include="$(ManagedDir)\Splatform.dll"><Private>false</Private></Reference>
+    <Reference Include="$(ManagedDir)\SoftReferenceableAssets.dll"><Private>false</Private></Reference>
+    <Reference Include="$(ManagedDir)\UnityEngine*.dll"><Private>false</Private></Reference>
+  </ItemGroup>
+  <Target Name="CheckReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(ManagedDir)\assembly_valheim.dll')" Text="Укажите путь к Valheim через -p:ValheimDir или -p:ManagedDir." />
+    <Error Condition="!Exists('$(BepInExCore)\BepInEx.dll')" Text="Нужен BepInExPack для Valheim. Укажите -p:BepInExCore при необходимости." />
+  </Target>
+</Project>

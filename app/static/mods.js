@@ -24,11 +24,26 @@
     const button=text('button',label);button.type='button';button.dataset.modAction=action;
     button.dataset.modUnavailable=String(unavailable);
     if(unavailable)button.title='ZIP-пакет обновляется повторной загрузкой архива';
-    button.onclick=()=>change(action,{id:pkg.id,...(action==='mod_toggle'?{enabled:!pkg.enabled}:{})},pkg.name||pkg.id);
+    button.onclick=()=>change(pkg.source==='builtin'&&action==='mod_update'?'mod_builtin':action,{id:pkg.id,...(action==='mod_toggle'?{enabled:!pkg.enabled}:{})},pkg.name||pkg.id);
     return button;
   }
   function render(value){
     catalog=value;
+    let builtin=$('mods-builtin-admin');
+    if(!builtin){builtin=document.createElement('article');builtin.id='mods-builtin-admin';builtin.className='card mods-client';$('mods-mode-help').after(builtin);}
+    builtin.replaceChildren();builtin.hidden=!value.builtin_admin;
+    if(value.builtin_admin){
+      const info=value.builtin_admin,installed=value.packages?.find(p=>p.id===info.id);
+      builtin.append(text('p','ВСТРОЕННЫЙ АДМИН-МОД',false,'eyebrow accent'),text('h3','Hearth Admin'),
+        text('p','Игровое меню по F8: телепорты, помощь игрокам, предметы и мобы, рельеф, супермолот, строительство и журнал. Управляйте ими также из раздела «Игровые инструменты».',false,'muted'),
+        text('p','Требуется на сервере и у всех игроков. Установщики на лендинге получат ту же версию. В игровом меню есть переключатель RU / EN.',false,'tiny'),
+        text('p','Если ValheimAdminRu уже ставили вручную, сначала уберите прежнюю DLL с сервера и клиентов, чтобы избежать двух копий мода.',false,'tiny'),
+        text('p','Целевые версии Valheim: '+info.games.join(', '),false,'tiny'));
+      const version=document.createElement('p');version.append(text('span','Версия: '),text('span',info.version,true));builtin.append(version);
+      const actions=document.createElement('div');actions.className='toolbar';
+      const install=text('button',installed?'Переустановить встроенную версию':'Установить Hearth Admin');install.type='button';install.dataset.modAction='mod_builtin';install.onclick=()=>change('mod_builtin',{},'Hearth Admin '+info.version);actions.append(install);
+      const link=text('a','Открыть игровые инструменты ↗');link.href='#game-admin';actions.append(link);builtin.append(actions);
+    }
     let loader=$('mods-loader');
     if(!loader){loader=document.createElement('p');loader.id='mods-loader';loader.className='muted';$('mods-mode-help').after(loader);}
     loader.replaceChildren();loader.hidden=!value.loader?.version;
@@ -48,7 +63,7 @@
       const details=document.createElement('dl');details.className='mods-package-details';
       detail(details,'Версия',pkg.version||'—',true);
       detail(details,'Область установки',scopes[pkg.scope]||pkg.scope,!Object.hasOwn(scopes,pkg.scope));
-      detail(details,'Источник',pkg.source==='manual'?'ZIP вручную':pkg.source==='thunderstore'?'Thunderstore':pkg.source||'—',!['manual','thunderstore'].includes(pkg.source));
+      detail(details,'Источник',pkg.source==='builtin'?'Встроен в Hearth':pkg.source==='manual'?'ZIP вручную':pkg.source==='thunderstore'?'Thunderstore':pkg.source||'—',!['manual','thunderstore','builtin'].includes(pkg.source));
       const dependencies=(pkg.dependencies||[]).map(item=>typeof item==='string'?item:item.id||item.name||'—');
       detail(details,'Зависимости',dependencies.length?dependencies.join(', '):'Нет зависимостей',Boolean(dependencies.length));card.append(details);
       const actions=document.createElement('div');actions.className='toolbar mods-package-actions';
@@ -93,6 +108,7 @@
   async function change(action,data,identity){
     if(busy||closing||requesting||queued||!catalog?.available)return;
     const prompts={
+      mod_builtin:'Установить встроенный Hearth Admin на сервер и добавить его в набор для игроков? Перед применением — остановка игры и резервная копия. Если игра работала, она запустится снова.',
       mod_install:'Установить этот мод и зависимости? Перед применением панель остановит игру и создаст резервную копию. Затем вернёт прежнее состояние запуска. Совместимость модов проверьте отдельно.',
       mod_update:'Обновить этот мод? Перед применением панель остановит игру и создаст резервную копию. Если игра работала, она запустится снова.',
       mod_toggle:data.enabled?'Включить этот мод? Перед изменением — остановка игры и резервная копия. Моды для клиентов также должны быть установлены у игроков.':'Выключить этот мод? Перед изменением — остановка игры и резервная копия. Пакеты, которым он необходим, могут помешать отключению.',

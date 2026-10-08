@@ -4,6 +4,7 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="robots" content="noindex,nofollow"><title>Hearth · Valheim</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/i18n.css"><script defer src="/i18n-catalog.js"></script><script defer src="/i18n.js"></script><script defer src="/app.js"></script><script defer src="/mod-ru.js"></script><script defer src="/settings.js"></script><script defer src="/transfer.js"></script><script defer src="/operations.js"></script><script defer src="/players.js"></script>
   <script defer src="/health.js"></script><link rel="stylesheet" href="/mods.css"><script defer src="/mods.js"></script>
+  <link rel="stylesheet" href="/game-admin.css"><script defer src="/game-admin.js"></script>
 </head>
 <body><div class="language-switch panel-language" data-language-switch></div>
   <div id="login" class="login">
@@ -15,7 +16,7 @@
   </div>
   <div id="dashboard" hidden>
     <aside><a class="brand" href="/admin">ᛟ <b>HEARTH</b></a><p class="eyebrow">ВАШ СЕРВЕР</p><nav>
-      <a href="#overview">◈ Обзор</a><a href="#health">♡ Здоровье сервера</a><a href="#players">♙ Игроки</a><a href="#world">◇ Мир и копии</a><a href="#settings" id="settings-nav">⚙ Настройки</a><a href="#mods" id="mods-nav">✦ Моды</a><a href="#updates">↗ Обновления</a><a href="#maintenance">Обслуживание</a><a href="#journal">≡ Журнал</a>
+      <a href="#overview">◈ Обзор</a><a href="#health">♡ Здоровье сервера</a><a href="#players">♙ Игроки</a><a href="#game-admin" id="game-admin-nav">ᛉ Игровые инструменты</a><a href="#world">◇ Мир и копии</a><a href="#settings" id="settings-nav">⚙ Настройки</a><a href="#mods" id="mods-nav">✦ Моды</a><a href="#updates">↗ Обновления</a><a href="#maintenance">Обслуживание</a><a href="#journal">≡ Журнал</a>
     </nav><div class="aside-bottom"><a href="/" class="quiet">← Предпросмотр сайта</a><br><a id="project-link" href="/" class="quiet" target="_blank" rel="noopener noreferrer">Сайт сервера ↗</a><br><span class="tiny">VALHEIM / ВАШ МИР</span><button id="logout" class="quiet">Выйти из панели</button></div></aside>
     <main>
       <header><span class="eyebrow">ПАНЕЛЬ УПРАВЛЕНИЯ / ОБЗОР</span><span id="connection" class="pill">Подключение…</span></header>
@@ -65,6 +66,30 @@
         </article>
         <p class="muted">Входы — из лога игры. Время — оценка по A2S с момента установки панели. Если сервер скрывает имена, время не учитывается. Одинаковые имена объединяются.</p>
         <div class="table-wrap"><table><thead><tr><th>Персонаж</th><th>Входов</th><th>Наблюдаемое время</th><th>Последняя активность</th></tr></thead><tbody id="players-body"></tbody></table></div>
+      </section>
+      <section id="game-admin">
+        <div class="section-head"><h2>Игровые инструменты</h2><button type="button" id="game-admin-reload">Обновить данные</button></div>
+        <p class="muted">Игровые действия доступны вошедшему администратору Hearth через ValheimAdminRu. Выберите подключённого игрока, чей клиент выполнит команду. На сервере и клиенте нужны одинаковые версии мода; игровая роль исполнителя не изменяется.</p>
+        <div id="game-admin-state" class="notice" role="status">Ожидаем сведения игрового мода</div>
+        <p id="game-admin-meta" class="tiny"></p>
+        <div class="card game-admin-selection">
+          <div class="settings-grid">
+            <label>Выполняющий игрок · SteamID<select id="game-admin-executor" data-i18n-skip><option value="">—</option></select></label>
+            <label>Целевой игрок · SteamID<select id="game-admin-target" data-i18n-skip><option value="">—</option></select></label>
+          </div>
+          <p id="game-admin-role" class="tiny"></p>
+          <p class="tiny">Действия «себе», спавн, строительство и земля относятся к выполняющему игроку. Помощь и перемещение к игроку используют выбранную цель. Доступ к веб-панели и роли меню F8 управляются отдельно.</p>
+        </div>
+        <div id="game-admin-actions" class="game-admin-grid"></div>
+        <div id="game-admin-result" class="notice" role="status" hidden></div>
+        <details class="card game-admin-records"><summary>Игроки и роли мода</summary>
+          <p class="tiny">Роли определяют доступ к меню F8 в игре. Владелец определяется серверным adminlist.txt. Дополнительные роли — модератор и строитель. Веб-команда не выдаёт роль владельца.</p>
+          <div class="table-wrap"><table><thead><tr><th>Игрок</th><th>SteamID</th><th>Роль мода</th><th>Клиент</th></tr></thead><tbody id="game-admin-players"></tbody></table></div>
+        </details>
+        <details class="card game-admin-records"><summary>Журнал игровых действий</summary>
+          <p class="tiny">Подтверждение клиента означает, что мод ответил на команду. Оно не заменяет проверку результата в мире.</p>
+          <div class="table-wrap"><table><thead><tr><th>Время</th><th>Кто выполнил</th><th>Действие</th><th>Параметры</th><th>Результат</th></tr></thead><tbody id="game-admin-audit"></tbody></table></div>
+        </details>
       </section>
       <section id="world"><div class="section-head"><h2>Мир и резервные копии</h2><span class="eyebrow">СОХРАНИТЬ ВАЖНОЕ</span></div>
         <p class="muted">Автоматические копии ждут пустого сервера. Копирование выполняется после остановки и сохранения мира. Ручная копия прервёт игру на время операции.</p>

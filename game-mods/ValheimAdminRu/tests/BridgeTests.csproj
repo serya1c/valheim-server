@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <UseAppHost>false</UseAppHost>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <DefineConstants>HEARTH_BRIDGE_TEST</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="BridgeTests.cs" />
+    <Compile Include="../src/HearthBridge.cs" Link="HearthBridge.cs" />
+    <Compile Include="../src/Protocol.cs" Link="Protocol.cs" />
+  </ItemGroup>
+</Project>

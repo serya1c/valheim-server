@@ -279,7 +279,7 @@ class ModManager:
                     raise ValueError()
                 ids.add(ident.casefold())
                 _scope(package['scope'])
-                if type(package['enabled']) is not bool or package['source'] not in ('thunderstore', 'manual'):
+                if type(package['enabled']) is not bool or package['source'] not in ('thunderstore', 'manual', 'builtin'):
                     raise ValueError()
                 list(self._stored_files(package, read=False))
             if state.get('loader'):
@@ -494,7 +494,7 @@ class ModManager:
         if total > MAX_TRANSACTION:
             raise ValueError('Общий размер модов превышает допустимый размер')
 
-    def _transaction(self, ident, version, scope, payload=None, local_name=None, active=True):
+    def _transaction(self, ident, version, scope, payload=None, local_name=None, active=True, builtin=False):
         proposed = copy.deepcopy(self.state)
         packages = {package['id'].casefold(): package for package in proposed['packages']}
         created, visiting, pins = [], set(), {}
@@ -538,7 +538,7 @@ class ModManager:
                 dependencies = metadata.get('dependencies', [])
                 if not isinstance(number, str) or not VERSION.fullmatch(number) or not isinstance(dependencies, list) or len(dependencies) > MAX_PACKAGES:
                     raise ValueError('Недопустимая версия или зависимости в манифесте ZIP')
-                source, description = 'manual', metadata.get('description', '')
+                source, description = 'builtin' if builtin else 'manual', metadata.get('description', '')
             else:
                 metadata = self._metadata(current, pin)
                 number, dependencies = metadata['version_number'], metadata['dependencies']
@@ -597,6 +597,15 @@ class ModManager:
             if path.is_symlink() or not path.is_file() or path.stat().st_size > MAX_ARCHIVE:
                 raise ValueError('Недопустимый файл ZIP мода или слишком большой размер')
             return self._transaction('local-' + slug, None, _scope(scope), payload=path.read_bytes(), local_name=name.strip())
+
+    def install_builtin(self, path, expected_sha256):
+        """The caller supplies a bundled, hash-pinned archive, never an HTTP path."""
+        with self.lock:
+            payload = Path(path).read_bytes()
+            if hashlib.sha256(payload).hexdigest() != expected_sha256:
+                raise ValueError('Повреждён встроенный пакет админ-мода')
+            return self._transaction('Hearth-ValheimAdmin', None, 'both', payload=payload,
+                                     local_name='Hearth Admin', builtin=True)
 
     def _package(self, ident):
         if not isinstance(ident, str):

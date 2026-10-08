@@ -32,6 +32,7 @@ from operations import Operations
 from player_access import PlayerAccess, LABELS as PLAYER_ACTION_NAMES, steam_id
 from health import HealthMonitor
 from mods import ModManager
+from game_admin import GameAdmin, builtin_info, BUNDLE
 
 BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
@@ -68,7 +69,7 @@ ACTION_NAMES = {'start': 'Запуск', 'stop': 'Остановка', 'restart'
                 'install': 'Установка обновления', 'restore': 'Восстановление мира', 'rollback': 'Полный откат',
                 'configure':'Сохранение настроек', 'export_world':'Экспорт мира', 'import_world':'Импорт мира',
                 'maintenance':'Обслуживание', 'check_panel':'Проверка версии панели',
-                'mod_install':'Установка мода', 'mod_upload':'Установка ZIP мода',
+                'mod_install':'Установка мода', 'mod_upload':'Установка ZIP мода', 'mod_builtin':'Установка Hearth Admin',
                 'mod_update':'Обновление мода', 'mod_toggle':'Переключение мода', 'mod_remove':'Удаление мода',
                 'recover_mods':'Откат набора модов после прерванной операции'}
 
@@ -184,6 +185,7 @@ class Manager:
         self.player_access = PlayerAccess(self)
         self.health = HealthMonitor(self)
         self.mods = ModManager(base, external_versions=self.mod_external_versions)
+        self.game_admin = GameAdmin(self)
         self.client_mods = None
         client_meta = base / 'client-mods.json'
         if client_meta.is_file() and (base / 'client-mods.zip').is_file():
@@ -269,6 +271,7 @@ class Manager:
         env = os.environ.copy()
         # Do not pass the panel credential to the game process.
         env.pop('PANEL_PASSWORD', None)
+        env.pop('HEARTH_ADMIN_BRIDGE', None)
         mode = mode or json.loads((folder / 'hearth.json').read_text()).get('mode', 'plus')
         env.update(SteamAppId='892970', LD_LIBRARY_PATH=f'{folder}/linux64')
         for key in ('LD_PRELOAD', 'DOORSTOP_ENABLED', 'DOORSTOP_ENABLE', 'DOORSTOP_TARGET_ASSEMBLY'):
@@ -281,6 +284,8 @@ class Manager:
                        DOORSTOP_TARGET_ASSEMBLY=str(folder / 'BepInEx/core/BepInEx.Preloader.dll'),
                        LD_LIBRARY_PATH=f'{folder}/linux64:{folder}/doorstop_libs', LD_PRELOAD=str(folder / 'doorstop_libs/libdoorstop_x64.so'))
         exe = folder / 'valheim_server.x86_64'
+        if not probe and mode in ('plus', 'modded') and self.game_admin.installed():
+            env['HEARTH_ADMIN_BRIDGE'] = str(self.game_admin.root)
         exe.chmod(exe.stat().st_mode | 0o111)
         args = ['-name','Hearth version probe','-world','VersionProbe','-password',secrets.token_hex(12),'-public','0'] if probe else self.config.launch_args()
         return subprocess.Popen([str(exe), '-nographics', '-batchmode', '-port', str(port),
@@ -319,6 +324,7 @@ class Manager:
         self.startup = {}
         self.operations.ready = False
         self.online = None
+        self.game_admin.prepare_start()
         self.proc = self.spawn(folder, self.base / 'saves', game_ports()[0])
         self.started = time.time()
         self.reader = threading.Thread(target=self.read_game, args=(self.proc,), daemon=True)
@@ -639,7 +645,8 @@ class Manager:
     def mods_view(self):
         mode = (self.metadata() or {}).get('mode', 'plus' if self.metadata() else None)
         return {**self.mods.view(), 'available': mode in ('plus', 'modded'),
-                'client_url': '/downloads/Hearth-Client-Mods.zip' if self.public_client_mods() else None}
+                'client_url': '/downloads/Hearth-Client-Mods.zip' if self.public_client_mods() else None,
+                'builtin_admin': builtin_info()}
 
     def public_client_mods(self):
         mode = (self.metadata() or {}).get('mode', 'plus' if self.metadata() else None)
@@ -682,6 +689,19 @@ class Manager:
             candidate = ModManager(staged_base, external_versions=self.mod_external_versions)
             if action == 'mod_install':
                 candidate.install(data.get('source'), data.get('scope', 'both'))
+            elif action == 'mod_builtin':
+                bundled = builtin_info()
+                if not bundled:
+                    raise ValueError('Встроенный пакет админ-мода недоступен')
+                if versions.get('game') not in bundled['games']:
+                    raise ValueError('Hearth Admin проверен только с Valheim ' + ', '.join(bundled['games']))
+                # Do not load two copies with the same BepInEx GUID. Managed
+                # collisions are checked by ModManager's transaction validator.
+                plugins = self.active() / 'BepInEx/plugins'
+                for path in plugins.rglob('*.dll'):
+                    if path.name.casefold() == 'valheimadminru.dll' and 'HearthMods' not in path.relative_to(plugins).parts:
+                        raise ValueError('Удалите прежнюю ручную установку ValheimAdminRu перед установкой Hearth Admin')
+                candidate.install_builtin(BUNDLE, bundled['sha256'])
             elif action == 'mod_upload':
                 try:
                     candidate.upload(Path(data['path']), data.get('name', 'Custom'), data.get('scope', 'both'))
@@ -829,7 +849,7 @@ class Manager:
             world_transfer.export_world(self)
         elif action == 'import_world':
             world_transfer.import_world(self, data.get('token'))
-        elif action in ('mod_install', 'mod_upload', 'mod_update', 'mod_toggle', 'mod_remove'):
+        elif action in ('mod_install', 'mod_upload', 'mod_update', 'mod_toggle', 'mod_remove', 'mod_builtin'):
             self.change_mods(action, data)
         elif action == 'configure':
             self.configure(data)
@@ -990,6 +1010,7 @@ class Handler(BaseHTTPRequestHandler):
             return s if s and s['expires'] > time.time() else None
 
     def do_GET(self):
+        query = parse_qs(urlsplit(self.path).query)
         self.path = urlsplit(self.path).path
         if self.path in ('/i18n.js','/i18n-catalog.js','/i18n.css'):
             name = self.path[1:]
@@ -1067,6 +1088,8 @@ class Handler(BaseHTTPRequestHandler):
         assets['/health.js'] = ('health.js', 'text/javascript; charset=utf-8')
         assets['/mods.js'] = ('mods.js', 'text/javascript; charset=utf-8')
         assets['/mods.css'] = ('mods.css', 'text/css; charset=utf-8')
+        assets['/game-admin.js'] = ('game-admin.js', 'text/javascript; charset=utf-8')
+        assets['/game-admin.css'] = ('game-admin.css', 'text/css; charset=utf-8')
         if self.path in assets:
             name, mime = assets[self.path]
             if name == 'landing.html':
@@ -1095,6 +1118,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200, self.manager.status())
         if self.path == '/api/mods':
             return self.reply(200, self.manager.mods_view())
+        if self.path in ('/api/game-admin', '/api/game-admin/result'):
+            try:
+                value = (self.manager.game_admin.view() if self.path == '/api/game-admin'
+                         else self.manager.game_admin.result(query.get('id', [''])[0]))
+                return self.reply(200, value)
+            except ValueError as error:
+                return self.reply(400, {'error': str(error)})
         if self.path == '/api/config':
             try:
                 return self.reply(200, {**self.manager.config.view(), 'panel':self.manager.panel.view(), 'panel_revision':self.manager.panel.revision()})
@@ -1287,9 +1317,17 @@ class Handler(BaseHTTPRequestHandler):
                     access=self.manager.player_access.view()
                 finally:self.manager.lock.release()
                 return self.reply(200, {'access':access, 'message':message})
+            if self.path == '/api/game-admin':
+                if not self.manager.lock.acquire(blocking=False):
+                    raise ValueError('Другая операция уже выполняется')
+                try:
+                    value = self.manager.game_admin.submit(data)
+                finally:
+                    self.manager.lock.release()
+                return self.reply(202, value)
             if self.path == '/api/action':
                 action = data.get('action')
-                if action not in {'start', 'stop', 'restart', 'backup', 'install', 'restore', 'rollback', 'configure', 'export_world', 'import_world', 'check_panel', 'mod_install', 'mod_update', 'mod_toggle', 'mod_remove'}:
+                if action not in {'start', 'stop', 'restart', 'backup', 'install', 'restore', 'rollback', 'configure', 'export_world', 'import_world', 'check_panel', 'mod_install', 'mod_update', 'mod_toggle', 'mod_remove', 'mod_builtin'}:
                     raise ValueError('Неизвестная операция')
                 self.manager.submit(action, data)
                 return self.reply(202, {'accepted': True})
