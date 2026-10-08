@@ -44,8 +44,8 @@ function renderStatus(s, notify=true){
     $('connection').textContent = '● Панель на связи';
     $('world-name').textContent = s.world;
     $('project-link').href=s.site_url;
-    $('update-mode').textContent='Следующая установка: '+(s.target_mode==='vanilla'?'ванильный Valheim, без BepInEx и V+.':'Valheim Plus от Grantapher.')+(s.versions && (s.versions.mode||'plus')!==s.target_mode?' Сейчас установлен другой режим. Обновление переключит его с резервной копией мира.':'');
-    $('version-label').textContent = s.versions ? `Valheim ${s.versions.game} · ${s.versions.mode==='vanilla'?'Без модов':'Valheim Plus '+s.versions.mod+' / Grantapher'}` : 'Ожидает установки · смотрите журнал';
+    $('update-mode').textContent='Следующая установка: '+(s.target_mode==='vanilla'?'ванильный Valheim, без BepInEx и V+.':s.target_mode==='modded'?'BepInEx и собственный набор модов.':'Valheim Plus от Grantapher.')+(s.versions && (s.versions.mode||'plus')!==s.target_mode?' Сейчас установлен другой режим. Обновление переключит его с резервной копией мира.':'');
+    $('version-label').textContent = s.versions ? `Valheim ${s.versions.game} · ${s.versions.mode==='vanilla'?'Без модов':s.versions.mode==='modded'?'BepInEx':'Valheim Plus '+s.versions.mod+' / Grantapher'}` : 'Ожидает установки · смотрите журнал';
     $('server-state').textContent = s.running ? (s.online ? 'В сети' : 'Нет ответа A2S') : 'Остановлен';
     $('uptime').textContent = s.running ? 'Процесс работает: ' + duration(s.uptime) : 'Процесс не запущен';
     $('online').textContent = s.online ? s.online.count : '—';
@@ -61,7 +61,7 @@ function renderStatus(s, notify=true){
     $('approve-update').disabled = s.busy || !pendingApproval;
     if (pendingApproval) $('compatibility-details').textContent = `Steam: Valheim ${pendingApproval.actual}. Мод: V+ ${pendingApproval.mod}. Заявлено автором: Valheim ${pendingApproval.declared}. Одобрение доступно до ${fmtTime(pendingApproval.expires)}; после перезапуска панели проверку нужно повторить.`;
     table('players-body', s.players, (tr,p) => { cell(tr, (s.online?.names.includes(p.name)?'● ':'') + p.name,true); cell(tr,p.joins); cell(tr,duration(p.seconds)); cell(tr,fmtTime(p.last_seen)); },4);
-    const kinds = {system:'Система',connection:'Подключение',action:'Действие',update:'Обновление',error:'Ошибка',backup:'Копия',restore:'Восстановление',config:'Настройки',export:'Экспорт',import:'Импорт',players:'Управление игроками'};
+    const kinds = {system:'Система',connection:'Подключение',action:'Действие',update:'Обновление',error:'Ошибка',backup:'Копия',restore:'Восстановление',config:'Настройки',export:'Экспорт',import:'Импорт',players:'Управление игроками',mods:'Моды'};
     table('events-body', s.events, (tr,e) => { cell(tr,fmtTime(e.ts)); cell(tr,kinds[e.kind] || e.kind); cell(tr,e.message,['connection','system'].includes(e.kind)); },3);
     $('world-files').replaceChildren();
     s.files.sort((a,b)=>b.modified-a.modified).slice(0,30).forEach(f=>{

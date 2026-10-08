@@ -22,8 +22,8 @@ def landing_defaults():
     return values
 
 def server_mode(value):
-    if value not in ('plus', 'vanilla'):
-        raise ValueError('Режим сервера: plus или vanilla')
+    if value not in ('plus', 'vanilla', 'modded'):
+        raise ValueError('Режим сервера: plus, modded или vanilla')
     return value
 
 def game_ports():

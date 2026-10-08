@@ -13,6 +13,8 @@ assert.equal(t.t('Экспортирован мир Мир'),'World exported: М
 assert.equal(t.t('Имя в списке: Мир. Доступность извне зависит от указанных ниже UDP-портов и работы Steam.'),'Listing name: Мир. External availability depends on the UDP ports below and Steam connectivity.');
 assert.equal(t.t('Перенести мир на другой сервер'),'Move your world to another server');
 assert.equal(t.t('6 ч 12 мин'),'6 h 12 min');
+assert.equal(t.t('Мод Север-Demo требует включённую зависимость Team-Core-1.0.0 в той же области'),'Mod Север-Demo requires enabled dependency Team-Core-1.0.0 in the same scope');
+assert.equal(t.t('Изменение модов отменено; сохранена прежняя сборка. Мод не найден'),'Mod change cancelled; the previous collection was preserved. Mod not found');
 t.setLanguage('ru');assert.equal(t.t('Настройки'),'Настройки');assert.equal(stored,'ru');
 t.setLanguage('invalid');assert.equal(t.language,'ru');
 listeners.storage({key:'hearth-language',newValue:'en'});assert.equal(t.language,'en');

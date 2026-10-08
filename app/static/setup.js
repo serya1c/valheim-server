@@ -1,7 +1,7 @@
 'use strict';
 const field=id=>document.getElementById(id);
 let step=0, initial=null, busy=false;
-function showStep(){document.querySelectorAll('[data-step]').forEach(n=>n.hidden=Number(n.dataset.step)!==step);document.querySelectorAll('#steps li').forEach((n,i)=>{if(i===step)n.setAttribute('aria-current','step');else n.removeAttribute('aria-current');});field('back').hidden=step===0;field('next').hidden=step===3;field('finish').hidden=step!==3;field('error').textContent='';field('summary').textContent=`${field('server-name').value} · ${field('mode').value==='vanilla'?'Без модов':'Valheim Plus'} · Мир: ${field('world-name').value}`;}
+function showStep(){document.querySelectorAll('[data-step]').forEach(n=>n.hidden=Number(n.dataset.step)!==step);document.querySelectorAll('#steps li').forEach((n,i)=>{if(i===step)n.setAttribute('aria-current','step');else n.removeAttribute('aria-current');});field('back').hidden=step===0;field('next').hidden=step===3;field('finish').hidden=step!==3;field('error').textContent='';field('summary').textContent=`${field('server-name').value} · ${field('mode').value==='vanilla'?'Без модов':field('mode').value==='modded'?'BepInEx':'Valheim Plus'} · Мир: ${field('world-name').value}`;}
 function valid(){for(const n of document.querySelector(`[data-step="${step}"]`).querySelectorAll('input,select,textarea'))if(!n.reportValidity())return false;if(step===0&&field('panel-password').value!==field('panel-repeat').value){field('error').textContent='Пароли администратора не совпадают.';return false;}return true;}
 field('back').onclick=()=>{if(!busy){step--;showStep();}};
 field('next').onclick=()=>{if(!busy&&valid()){step++;showStep();}};

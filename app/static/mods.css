@@ -1,0 +1,33 @@
+#mods .mods-intro{max-width:850px}
+#mods .mods-install-grid{align-items:start;margin:20px 0}
+#mods .mods-install-grid .card{height:100%;min-width:0}
+#mods .mods-install-grid input,#mods .mods-install-grid select{margin-bottom:16px}
+#mods .mods-packages{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:18px}
+#mods .mods-package{min-width:0}
+#mods .mods-package-heading{display:flex;justify-content:space-between;align-items:start;gap:12px}
+#mods .mods-package-heading h3{margin:0;overflow-wrap:anywhere;font-size:18px}
+#mods .mods-badge{flex-shrink:0;border:1px solid #536449;border-radius:20px;padding:3px 10px;font-size:10px;color:var(--green)}
+#mods .mods-badge-off{color:var(--muted);border-color:var(--line)}
+#mods .mods-package-id{font:11px/1.5 ui-monospace,monospace;overflow-wrap:anywhere;margin:7px 0 0;color:var(--muted)}
+#mods .mods-package-description{overflow-wrap:anywhere;margin:14px 0 0}
+#mods .mods-package-details{display:grid;grid-template-columns:1fr 1fr;gap:12px 20px;margin:22px 0}
+#mods .mods-package-details div:last-child{grid-column:1/-1}
+#mods .mods-package-details dt{font-size:10px;color:var(--muted)}
+#mods .mods-package-details dd{font-size:12px;margin:4px 0 0;overflow-wrap:anywhere}
+#mods .mods-package-actions{padding-top:16px;border-top:1px solid var(--line)}
+#mods .mods-package-actions button{font-size:12px;padding:8px 12px}
+#mods .mods-empty{grid-column:1/-1;padding:28px;text-align:center}
+#mods .mods-empty p{margin-bottom:0}
+#mods .mods-client{margin-top:20px}
+#mods-message{overflow-wrap:anywhere}
+.mods-confirm-identity{display:block;overflow-wrap:anywhere;font-family:ui-monospace,monospace}
+@media(max-width:1100px){#mods .mods-packages{grid-template-columns:1fr}}
+
+@media(max-width:700px){aside nav a#mods-nav{display:block;font-size:12px}}
+@media(min-width:701px){
+  aside{display:flex;flex-direction:column}
+  aside .brand{flex:none;margin-bottom:28px}
+  aside nav{min-height:0;flex:1;overflow-y:auto;padding:0 10px;margin:0 -10px}
+  aside nav a{padding:9px 10px;margin:3px -10px}
+  aside .aside-bottom{position:static;flex:none;padding-top:16px}
+}

@@ -22,7 +22,7 @@ sealed class MainForm : Form
     readonly Label local=new(){AutoSize=true,Text="Выберите папку игры",Margin=new(0,4,0,12)};
     readonly TextBox log=new(){Multiline=true,ReadOnly=true,ScrollBars=ScrollBars.Vertical,Dock=DockStyle.Fill,BackColor=Color.FromArgb(17,27,27),ForeColor=Color.Gainsboro,BorderStyle=BorderStyle.FixedSingle};
     readonly Button check=new(){Text="Проверить сервер",AutoSize=true};
-    readonly Button install=new(){Text="Установить Valheim Plus",AutoSize=true};
+    readonly Button install=new(){Text="Установить моды сервера",AutoSize=true};
     readonly Button restore=new(){Text="Восстановить файлы",AutoSize=true};
     readonly Button browse=new(){Text="Выбрать папку…",AutoSize=true};
     readonly ProgressBar progress=new(){Dock=DockStyle.Fill,Height=8,Style=ProgressBarStyle.Marquee,Visible=false};
@@ -34,7 +34,7 @@ sealed class MainForm : Form
         BackColor=Color.FromArgb(25,38,38);ForeColor=Color.FromArgb(237,229,210);Font=new("Segoe UI",10);
         var layout=new TableLayoutPanel{Dock=DockStyle.Fill,Padding=new(24),ColumnCount=1,RowCount=9};
         for(int i=0;i<9;i++)layout.RowStyles.Add(new(i==7?SizeType.Percent:SizeType.AutoSize,i==7?100:0));
-        layout.Controls.Add(new Label{Text="ᛟ  LOKI  /  VALHEIM PLUS",Font=new("Segoe UI",23,FontStyle.Bold),AutoSize=true,ForeColor=Color.FromArgb(231,181,98)},0,0);
+        layout.Controls.Add(new Label{Text="ᛟ  LOKI  /  МОДЫ СЕРВЕРА",Font=new("Segoe UI",23,FontStyle.Bold),AutoSize=true,ForeColor=Color.FromArgb(231,181,98)},0,0);
         var endpointPanel=new FlowLayoutPanel{Dock=DockStyle.Top,AutoSize=true,FlowDirection=FlowDirection.TopDown,WrapContents=false};
         endpointPanel.Controls.Add(new Label{Text="Адрес сайта сервера (скопируйте с лендинга):",AutoSize=true});endpointPanel.Controls.Add(website);
         endpointPanel.Controls.Add(new Label{Text="Steam · Windows 10/11 x64. Сначала проверьте выбранный сервер.",AutoSize=true});layout.Controls.Add(endpointPanel,0,1);
@@ -53,7 +53,7 @@ sealed class MainForm : Form
         Shown+=async(_,_)=>await Run(async()=>{var games=await Task.Run(SteamFinder.Find);folder.Items.AddRange(games.Cast<object>().ToArray());if(games.Count>0)folder.SelectedIndex=0;else Write("Steam-версия Valheim не найдена автоматически. Выберите её папку вручную.");});
     }
     void Write(string text){if(InvokeRequired){BeginInvoke(()=>Write(text));return;}log.AppendText($"[{DateTime.Now:HH:mm:ss}] {text}\r\n");}
-    void ShowVersion()=>server.Text=$"На сервере: Valheim {version!.Game}  ·  Valheim Plus {version.Mod}";
+    void ShowVersion()=>server.Text=$"На сервере: Valheim {version!.Game}  ·  {(version.Mode=="plus"?"Valheim Plus "+version.Mod:"BepInEx")}  ·  Дополнительных модов: {version.ClientMods?.Packages.Count??0}";
     void RefreshLocal(){try{local.Text=Installer.IsGame(folder.Text)?"V+ в выбранной папке: "+Installer.ExistingMod(folder.Text):"Нужна папка с valheim.exe и valheim_Data";}catch(Exception e){local.Text="Не удалось прочитать мод: "+e.Message;}}
     async Task Run(Func<Task> action)
     {
@@ -66,16 +66,28 @@ sealed class MainForm : Form
     {
         string game=Installer.Root(folder.Text);await Task.Run(()=>Installer.ValidateTarget(game));
         using var source=new SourceClient(website.Text.Trim());version=await source.Server();ShowVersion();var selected=version;
-        if(MessageBox.Show(this,$"Установить Valheim Plus {selected.Mod} и BepInEx в:\n{game}\n\nДля входа нужна Valheim {selected.Game}. Заменяемые файлы будут сохранены; существующие конфигурации сохранятся.","Установка мода Loki",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
-        Write("Загружаем официальный WindowsClient.zip для V+ "+selected.Mod+"…");
-        var download=await source.Download(selected);Write("SHA-256 пакета проверен.");
+        string label=selected.Mode=="plus"?"Valheim Plus "+selected.Mod+" и BepInEx":"BepInEx";
+        if(MessageBox.Show(this,$"Установить {label} и моды выбранного сервера в:\n{game}\n\nДля входа нужна Valheim {selected.Game}. Заменяемые файлы будут сохранены; существующие конфигурации сохранятся.\nМоды предоставлены выбранным сервером и будут выполняться на вашем компьютере.","Установка модов Loki",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
         string cache=Path.GetFullPath(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"LokiInstaller","cache"));
         string stage=Installer.SafePath(cache,Guid.NewGuid().ToString("N"));
         try
         {
-            var files=await Task.Run(()=>{var result=Installer.Extract(download.Data,stage);Installer.ValidatePayload(stage,selected.Mod);return result;});
-            if(await source.Server()!=selected)throw new IOException("Версии сервера изменились во время загрузки. Повторите установку.");
-            string backup=await Task.Run(()=>Installer.Apply(game,stage,files,selected.Mod,Write));
+            var files=new List<string>();
+            if(selected.Mode=="plus")
+            {
+                Write("Загружаем официальный WindowsClient.zip для V+ "+selected.Mod+"…");
+                var download=await source.Download(selected);
+                files=await Task.Run(()=>Installer.Extract(download.Data,stage));
+            }
+            if(selected.ClientMods is {} bundle)
+            {
+                Write("Загружаем клиентский набор выбранного сервера…");
+                var data=await source.DownloadBundle(bundle);
+                files.AddRange(await Task.Run(()=>Installer.Extract(data,stage,selected.Mode=="plus",bundle.Kind=="overlay")));
+            }
+            await Task.Run(()=>Installer.ValidatePayload(stage,selected.Mod));Write("SHA-256 и состав клиентского набора проверены.");
+            if(!selected.SameAs(await source.Server()))throw new IOException("Версии или набор модов сервера изменились во время загрузки. Повторите установку.");
+            string backup=await Task.Run(()=>Installer.Apply(game,stage,files,selected.Mod??"BepInEx",Write,generic:selected.Mode=="modded"));
             Write("Готово! Резервная копия: "+backup);RefreshLocal();MessageBox.Show(this,"Мод установлен. Запустите Valheim через Steam и используйте адрес подключения с сайта выбранного сервера. Пароль можно получить у его администратора.","До встречи у очага!",MessageBoxButtons.OK,MessageBoxIcon.Information);
         }
         finally

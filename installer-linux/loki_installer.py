@@ -154,10 +154,10 @@ def server_endpoint(website):
     return website.rstrip('/') + '/api/public'
 
 
-def fetch(url, limit=1024*1024):
+def fetch(url, limit=1024*1024, from_server=False):
     hosts = {'api.github.com','github.com','release-assets.githubusercontent.com','objects.githubusercontent.com'}
     opener = urllib.request.build_opener(NoRedirect())
-    is_server = url == SERVER
+    is_server = url == SERVER or from_server
     original = urllib.parse.urlsplit(SERVER).netloc
     if is_server: hosts = {urllib.parse.urlsplit(SERVER).hostname}
     for _ in range(6):
@@ -180,13 +180,43 @@ def fetch(url, limit=1024*1024):
     raise ValueError('Слишком много перенаправлений.')
 
 
-def server_version():
-    data = json.loads(fetch(SERVER))
+def parse_server(data):
+    if not isinstance(data,dict): raise ValueError('Некорректный ответ сервера.')
     if data.get('mode') == 'vanilla': raise ValueError('Это ванильный сервер. V+ не требуется; используйте клиент без модов.')
-    game, mod = data.get('game'), data.get('mod')
-    if not all(isinstance(v,str) and VERSION.fullmatch(v) for v in [game,mod]):
+    game, mod, mode = data.get('game'), data.get('mod'), data.get('mode','plus')
+    if not isinstance(mode,str) or mode not in {'plus','modded'} or not isinstance(game,str) or not VERSION.fullmatch(game) or (mode=='plus' and (not isinstance(mod,str) or not VERSION.fullmatch(mod))):
         raise ValueError('Сервер ещё не сообщает установленные версии. Повторите позже.')
-    return game, mod
+    bundle=data.get('client_mods')
+    if bundle is not None:
+        if not isinstance(bundle,dict) or bundle.get('url')!='/downloads/Hearth-Client-Mods.zip' or bundle.get('kind')!=('overlay' if mode=='plus' else 'full'):
+            raise ValueError('Некорректный клиентский набор модов.')
+        if not all(isinstance(bundle.get(key),str) and re.fullmatch('[0-9a-fA-F]{64}',bundle[key]) for key in ['sha256','revision']) or type(bundle.get('size')) is not int or not 1<=bundle['size']<=128*1024*1024:
+            raise ValueError('Некорректная контрольная сумма или размер клиентского набора.')
+        packages=bundle.get('packages')
+        if not isinstance(packages,list) or len(packages)>100: raise ValueError('Некорректный список клиентских модов.')
+        ids=set()
+        for package in packages:
+            if not isinstance(package,dict) or any(not isinstance(package.get(key),str) or not 1<=len(package[key])<=maximum or any(ord(c)<32 or ord(c)==127 for c in package[key]) for key,maximum in [('id',201),('name',200),('version',80)]):
+                raise ValueError('Некорректный список клиентских модов.')
+            if package['id'].casefold() in ids: raise ValueError('Повтор клиентского мода.')
+            ids.add(package['id'].casefold())
+        bundle={**bundle,'sha256':bundle['sha256'].lower(),'revision':bundle['revision'].lower()}
+    if mode=='modded' and bundle is None: raise ValueError('Сервер ещё не подготовил клиентский набор модов. Повторите позже.')
+    return {'game':game,'mod':None if mode=='modded' else mod,'mode':mode,'client_mods':bundle}
+
+
+def server_manifest():
+    return parse_server(json.loads(fetch(SERVER)))
+
+
+def server_version():
+    data=server_manifest()
+    return data['game'],data['mod']
+
+
+def manifest_signature(data):
+    bundle=data['client_mods']
+    return (data['game'],data['mod'],data['mode'],tuple(bundle[k] for k in ['url','sha256','size','revision','kind']) if bundle else None)
 
 
 def release_asset(data, mod):
@@ -208,26 +238,58 @@ def download(mod):
     return data
 
 
-def extract(data, stage):
+def download_bundle(bundle):
+    url=urllib.parse.urljoin(SERVER,bundle['url'])
+    data=fetch(url,bundle['size'],from_server=True)
+    if len(data)!=bundle['size'] or hashlib.sha256(data).hexdigest()!=bundle['sha256']:
+        raise ValueError('Размер или SHA-256 клиентского набора не совпадает.')
+    return data
+
+
+def extract(data, stage, require_plus=True, overlay=False):
     files=[]; seen=set()
     with zipfile.ZipFile(io.BytesIO(data)) as z:
         if len(z.infolist())>5000 or sum(i.file_size for i in z.infolist())>512*1024*1024: raise ValueError('Архив слишком большой.')
         for i in z.infolist():
             name=i.filename.replace('\\','/').rstrip('/')
-            if not name or not allowed(name): raise ValueError('Неожиданный файл в архиве: '+name)
+            metadata=name=='hearth-mods.json' and not i.is_dir()
+            if not name or not (metadata or allowed(name)): raise ValueError('Неожиданный файл в архиве: '+name)
+            if overlay and not metadata and not name.startswith('BepInEx/plugins/HearthMods/') and not (i.is_dir() and name in {'BepInEx','BepInEx/plugins','BepInEx/plugins/HearthMods'}):
+                raise ValueError('Дополнительный набор может содержать только плагины HearthMods.')
             if name.casefold() in seen: raise ValueError('Повтор пути в архиве.')
             seen.add(name.casefold())
             mode=stat.S_IFMT(i.external_attr >> 16)
             if mode not in {0,stat.S_IFREG,stat.S_IFDIR} or i.external_attr & 0x400: raise ValueError('Ссылки и особые файлы в архиве запрещены.')
+            if metadata:
+                if i.file_size>2*1024*1024: raise ValueError('Метаданные клиентского набора слишком большие.')
+                z.read(i)
+                continue
             dest=safe(stage,name)
             if i.is_dir(): dest.mkdir(parents=True,exist_ok=True); continue
             dest.parent.mkdir(parents=True,exist_ok=True)
             with z.open(i) as source, dest.open('xb') as target: shutil.copyfileobj(source,target)
             files.append(name)
-    if not REQUIRED.issubset(files): raise ValueError('Клиентский пакет неполон.')
-    for name in REQUIRED:
+    required=set() if overlay else REQUIRED if require_plus else REQUIRED-{'BepInEx/plugins/ValheimPlus.dll'}
+    if not required.issubset(files): raise ValueError('Клиентский пакет неполон.')
+    if not overlay and not require_plus and any('valheimplus' in name.lower() for name in files): raise ValueError('Набор BepInEx не должен содержать Valheim Plus.')
+    for name in required:
         if name.endswith('.dll'): pe(safe(stage,name))
     return files
+
+
+def prepare(manifest, stage):
+    files=[]
+    if manifest['mode']=='plus': files=extract(download(manifest['mod']),stage)
+    bundle=manifest['client_mods']
+    if bundle:
+        files.extend(extract(download_bundle(bundle),stage,manifest['mode']=='plus',bundle['kind']=='overlay'))
+    return files
+
+
+def install_selected(game, stage, files, manifest, **kwargs):
+    if manifest_signature(server_manifest())!=manifest_signature(manifest):
+        raise ValueError('Версии или набор модов сервера изменились во время загрузки. Повторите установку.')
+    return install(game,stage,files,manifest['mod'] or 'BepInEx',generic=manifest['mode']=='modded',**kwargs)
 
 
 def digest(path):
@@ -264,6 +326,19 @@ def latest(game):
             safe(game,p.relative_to(game).as_posix())
             if p.is_dir() and safe(p,'journal.json').is_file(): folders.append(p)
     return max(folders,default=None)
+
+
+def installed_journal(game):
+    root=safe(game,'.loki-installer-linux/backups')
+    if root.is_dir():
+        for folder in sorted(root.iterdir(),reverse=True):
+            safe(game,folder.relative_to(game).as_posix())
+            if folder.is_dir() and safe(folder,'journal.json').is_file():
+                journal=read_journal(folder)
+                if journal.get('state')=='installed':
+                    if journal.get('game')!=str(game) or not isinstance(journal.get('files'),list) or len(journal['files'])>5000: raise ValueError('Повреждён журнал установленного набора.')
+                    return journal
+    return {'files':[]}
 
 
 @contextlib.contextmanager
@@ -309,11 +384,16 @@ def restore(game):
         return backup
 
 
-def install(game,stage,files,mod,log=print,before_copy=None):
+def install(game,stage,files,mod,log=print,before_copy=None,generic=False):
     game=validate_game(game)
     with lock(game):
         previous=latest(game)
         if previous and read_journal(previous)['state']=='installing': raise ValueError('Предыдущая установка прервана. Сначала выполните восстановление.')
+        owned=installed_journal(game)['files']
+        selected={name.casefold() for name in files}
+        plus='BepInEx/plugins/ValheimPlus.dll'; existing_plus=safe(game,plus)
+        if generic and existing_plus.is_file() and not any(item['path'].casefold()==plus.casefold() and item['installed']==digest(existing_plus) for item in owned):
+            raise ValueError('В игре есть пользовательский Valheim Plus. Уберите его через свой менеджер модов перед установкой набора BepInEx.')
         backup=safe(game,'.loki-installer-linux/backups/'+str(time.time_ns())+'-'+uuid.uuid4().hex)
         backup.mkdir(parents=True)
         journal={'game':str(game),'mod':mod,'state':'installing','files':[]}
@@ -327,12 +407,29 @@ def install(game,stage,files,mod,log=print,before_copy=None):
                 saved=safe(backup,'original/'+name); atomic_copy(target,saved)
                 if digest(saved)!=original: raise ValueError('Ошибка резервного копирования.')
             journal['files'].append({'path':name,'original':original,'installed':digest(source)})
+        for item in owned:
+            name=item['path']
+            managed=name.casefold().startswith('bepinex/plugins/hearthmods/') or (generic and name.casefold()==plus.casefold())
+            if not managed or name.casefold() in selected or item['installed'] is None: continue
+            target=safe(game,name)
+            if not target.is_file(): continue
+            if digest(target)!=item['installed']:
+                log('Сохранён изменённый пользователем файл: '+name); continue
+            saved=safe(backup,'original/'+name); atomic_copy(target,saved)
+            if digest(saved)!=item['installed']: raise ValueError('Ошибка резервного копирования.')
+            journal['files'].append({'path':name,'original':item['installed'],'installed':None})
+        if len(journal['files'])>5000: raise ValueError('Слишком много изменений в клиентском наборе. Установка отменена.')
         save_journal(backup,journal)
         try:
             for index,item in enumerate(journal['files']):
                 game_closed()
                 if before_copy: before_copy(index)
-                atomic_copy(safe(stage,item['path']),safe(game,item['path']))
+                target=safe(game,item['path'])
+                if item['installed'] is None:
+                    if target.exists() and digest(target)!=item['original']: raise ValueError('Устаревший файл изменился во время установки: '+item['path'])
+                    target.unlink(missing_ok=True)
+                    log('Удалён устаревший файл набора: '+item['path'])
+                else: atomic_copy(safe(stage,item['path']),target)
             journal['state']='installed'; save_journal(backup,journal)
         except BaseException as error:
             try: restore_files(game,backup,journal)
@@ -380,20 +477,20 @@ def main(argv=None):
         print('Восстановлено из: '+str(restore(game)))
         print('Параметры запуска Steam не менялись. Если BepInEx удалён, уберите только winhttp из WINEDLLOVERRIDES.')
         return 0
-    version=server_version()
-    print(f'На {args.server}: Valheim {version[0]}, V+ {version[1]}. Игру обновляет Steam.')
+    version=server_manifest()
+    label='V+ '+version['mod'] if version['mode']=='plus' else 'BepInEx'
+    print(f"На {args.server}: Valheim {version['game']}, {label}. Игру обновляет Steam.")
     print('Папка: '+str(game))
     print('Существующие конфигурации сохранятся; заменяемые файлы будут скопированы в резервную копию.')
+    print('Моды предоставлены выбранным сервером и будут выполняться на вашем компьютере.')
     if input('Установить мод? [да/нет]: ').strip().lower() not in {'да','yes','y'}: return 0
-    print('Загружаем WindowsClient.zip от Grantapher для Proton…')
-    data=download(version[1]); print('SHA-256 проверен.')
+    print('Загружаем и проверяем клиентский набор выбранного сервера…')
     with tempfile.TemporaryDirectory(prefix='loki-proton-') as folder:
-        stage=Path(folder); files=extract(data,stage)
-        if server_version()!=version: raise ValueError('Сервер обновился во время загрузки. Повторите установку.')
-        backup=install(game,stage,files,version[1])
+        stage=Path(folder); files=prepare(version,stage)
+        backup=install_selected(game,stage,files,version)
     print('Файлы мода установлены. Резервная копия: '+str(backup))
     launch_help()
-    print('\nПосле настройки запустите игру через Steam. В BepInEx/LogOutput.log должна появиться загрузка Valheim Plus.')
+    print('\nПосле настройки запустите игру через Steam. Загрузка BepInEx и модов отображается в BepInEx/LogOutput.log.')
     print('Адрес подключения и сообщество: '+args.server)
     return 0
 

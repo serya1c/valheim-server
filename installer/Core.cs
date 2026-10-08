@@ -9,9 +9,16 @@ using Microsoft.Win32;
 
 namespace LokiInstaller;
 
-public record ServerVersion(string Game, string Mod);
+public record ClientPackage(string Id, string Name, string Version);
+public record ClientBundle(string Url, string Sha256, long Size, string Revision, string Kind, List<ClientPackage> Packages);
+public record ServerVersion(string Game, string? Mod, string Mode="plus", ClientBundle? ClientMods=null)
+{
+    public bool SameAs(ServerVersion other)=>Game==other.Game&&Mod==other.Mod&&Mode==other.Mode&&
+        (ClientMods is null ? other.ClientMods is null : other.ClientMods is {} bundle&&
+         (ClientMods.Url,ClientMods.Sha256,ClientMods.Size,ClientMods.Revision,ClientMods.Kind)==(bundle.Url,bundle.Sha256,bundle.Size,bundle.Revision,bundle.Kind));
+}
 public record ReleaseAsset(string Url, string Sha256);
-public record FileChange(string Path, string? OriginalHash, string InstalledHash);
+public record FileChange(string Path, string? OriginalHash, string? InstalledHash);
 public record Journal(string GamePath, string Mod, string State, List<FileChange> Files);
 
 public static class SteamFinder
@@ -110,8 +117,8 @@ public sealed class SourceClient : IDisposable
 {
     public const string ServerUrl="https://loki.ach-play.ru/api/public";
     const string KnownHash="1f6f1944b2285c34d663cbaf4353c846cabd4c35b9549d9006dd302ee4bda79b";
-    readonly HttpClient http=new(new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromMinutes(3)};
-    static readonly Regex VersionPattern=new(@"^\d+\.\d+\.\d+(?:\.\d+)?$",RegexOptions.CultureInvariant);
+    readonly HttpClient http;
+    static readonly Regex VersionPattern=new(@"\A\d+\.\d+\.\d+(?:\.\d+)?\z",RegexOptions.CultureInvariant);
     readonly string endpoint;
     public static string Endpoint(string website)
     {
@@ -119,12 +126,12 @@ public sealed class SourceClient : IDisposable
             throw new InvalidDataException("Укажите HTTPS-адрес сайта сервера без пути, параметров и пароля (порт 443).");
         return uri.GetLeftPart(UriPartial.Authority)+"/api/public";
     }
-    public SourceClient(string website="https://loki.ach-play.ru"){endpoint=Endpoint(website);http.DefaultRequestHeaders.UserAgent.ParseAdd("Loki-Mod-Installer/1.1");}
+    public SourceClient(string website="https://loki.ach-play.ru",HttpMessageHandler? handler=null){endpoint=Endpoint(website);http=new(handler??new HttpClientHandler{AllowAutoRedirect=false}){Timeout=TimeSpan.FromMinutes(3)};http.DefaultRequestHeaders.UserAgent.ParseAdd("Loki-Mod-Installer/1.2");}
     public void Dispose()=>http.Dispose();
     static bool Allowed(Uri uri)=>uri.Scheme=="https"&&uri.Port==443&&string.IsNullOrEmpty(uri.UserInfo)&&new[]{"api.github.com","github.com","release-assets.githubusercontent.com","objects.githubusercontent.com"}.Contains(uri.Host,StringComparer.OrdinalIgnoreCase);
-    async Task<byte[]> Get(string address,long maximum)
+    async Task<byte[]> Get(string address,long maximum,bool fromServer=false)
     {
-        var uri=new Uri(address);bool serverRequest=address==endpoint;var serverOrigin=new Uri(endpoint);
+        var uri=new Uri(address);bool serverRequest=address==endpoint||fromServer;var serverOrigin=new Uri(endpoint);
         for(int redirects=0;redirects<6;redirects++)
         {
             if(serverRequest ? uri.Scheme!="https"||uri.Authority!=serverOrigin.Authority||!string.IsNullOrEmpty(uri.UserInfo) : !Allowed(uri))throw new InvalidDataException("Источник или перенаправление загрузки не разрешены.");
@@ -149,12 +156,34 @@ public sealed class SourceClient : IDisposable
     }
     public static ServerVersion ParseServer(byte[] bytes)
     {
-        using var json=JsonDocument.Parse(bytes);var root=json.RootElement;
-        if(root.TryGetProperty("mode",out var mode)&&mode.GetString()=="vanilla")throw new InvalidDataException("Это ванильный сервер. Установка V+ не требуется; используйте клиент без модов.");
-        string game=root.TryGetProperty("game",out var g)&&g.ValueKind==JsonValueKind.String?g.GetString()!:"";
-        string mod=root.TryGetProperty("mod",out var m)&&m.ValueKind==JsonValueKind.String?m.GetString()!:"";
-        if(!VersionPattern.IsMatch(game)||!VersionPattern.IsMatch(mod))throw new InvalidDataException("Сервер ещё не сообщает установленную версию игры и мода. Повторите позже.");
-        return new(game,mod);
+        try
+        {
+            using var json=JsonDocument.Parse(bytes);var root=json.RootElement;
+            string mode=root.TryGetProperty("mode",out var modeValue)?modeValue.GetString()??"":"plus";
+            if(mode=="vanilla")throw new InvalidDataException("Это ванильный сервер. Установка модов не требуется; используйте клиент без модов.");
+            string game=root.TryGetProperty("game",out var g)&&g.ValueKind==JsonValueKind.String?g.GetString()!:"";
+            string? mod=root.TryGetProperty("mod",out var m)&&m.ValueKind==JsonValueKind.String?m.GetString():null;
+            if(mode is not ("plus" or "modded")||!VersionPattern.IsMatch(game)||(mode=="plus"&&(mod is null||!VersionPattern.IsMatch(mod))))throw new InvalidDataException("Сервер ещё не сообщает установленную версию игры и мода. Повторите позже.");
+            ClientBundle? bundle=null;
+            if(root.TryGetProperty("client_mods",out var c)&&c.ValueKind!=JsonValueKind.Null)
+            {
+                string url=c.GetProperty("url").GetString()??"",hash=c.GetProperty("sha256").GetString()??"",revision=c.GetProperty("revision").GetString()??"",kind=c.GetProperty("kind").GetString()??"";
+                long size=c.GetProperty("size").GetInt64();
+                if(url!="/downloads/Hearth-Client-Mods.zip"||!Regex.IsMatch(hash,@"\A[a-fA-F0-9]{64}\z")||!Regex.IsMatch(revision,@"\A[a-fA-F0-9]{64}\z")||size is <1 or >134217728||kind!=(mode=="plus"?"overlay":"full"))throw new InvalidDataException("Сервер сообщает некорректный клиентский набор модов.");
+                var packages=new List<ClientPackage>();var ids=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach(var package in c.GetProperty("packages").EnumerateArray())
+                {
+                    string id=package.GetProperty("id").GetString()??"",name=package.GetProperty("name").GetString()??"",version=package.GetProperty("version").GetString()??"";
+                    if(id.Length is <1 or >201||name.Length is <1 or >200||version.Length is <1 or >80||new[]{id,name,version}.Any(v=>v.Any(char.IsControl))||!ids.Add(id)||packages.Count>=100)throw new InvalidDataException("Некорректный список клиентских модов.");
+                    packages.Add(new(id,name,version));
+                }
+                bundle=new(url,hash.ToLowerInvariant(),size,revision.ToLowerInvariant(),kind,packages);
+            }
+            if(mode=="modded"&&bundle is null)throw new InvalidDataException("Сервер ещё не подготовил клиентский набор модов. Повторите позже.");
+            return new(game,mode=="modded"?null:mod,mode,bundle);
+        }
+        catch(Exception error) when(error is JsonException or InvalidOperationException or KeyNotFoundException or FormatException or OverflowException)
+        {throw new InvalidDataException("Некорректный ответ сервера о клиентских модах.");}
     }
     public Task<ServerVersion> Server()=>ReadServer();
     async Task<ServerVersion> ReadServer()=>ParseServer(await Get(endpoint,1024*1024));
@@ -175,6 +204,16 @@ public sealed class SourceClient : IDisposable
         var release=await Get($"https://api.github.com/repos/Grantapher/ValheimPlus/releases/tags/{server.Mod}",1024*1024);
         var asset=ParseRelease(release,server);var bytes=await Get(asset.Url,128L*1024*1024);
         VerifyHash(bytes,asset.Sha256);return(bytes,asset);
+    }
+    public async Task<byte[]> DownloadBundle(ClientBundle bundle)
+    {
+        var bytes=await Get(new Uri(new Uri(endpoint),bundle.Url).AbsoluteUri,bundle.Size,true);
+        VerifyBundle(bytes,bundle);return bytes;
+    }
+    public static void VerifyBundle(byte[] bytes,ClientBundle bundle)
+    {
+        if(bytes.LongLength!=bundle.Size)throw new InvalidDataException("Размер клиентского набора не совпадает. Ничего не установлено.");
+        VerifyHash(bytes,bundle.Sha256);
     }
     public static void VerifyHash(byte[] bytes,string hash){if(!Convert.ToHexString(SHA256.HashData(bytes)).Equals(hash,StringComparison.OrdinalIgnoreCase))throw new InvalidDataException("SHA-256 пакета не совпадает. Ничего не установлено.");}
 }
@@ -238,7 +277,7 @@ public static class Installer
         CheckGameClosed();
     }
     public static void CheckGameClosed(){foreach(var process in Process.GetProcessesByName("valheim")){process.Dispose();throw new IOException("Закройте Valheim перед установкой или восстановлением.");}}
-    public static List<string> Extract(byte[] bytes,string stage)
+    public static List<string> Extract(byte[] bytes,string stage,bool requirePlus=true,bool overlay=false)
     {
         Directory.CreateDirectory(stage);NoLinks(stage);
         using var zip=new ZipArchive(new MemoryStream(bytes),ZipArchiveMode.Read);
@@ -251,19 +290,32 @@ public static class Installer
             if(relative.Length==0)continue;
             string target=SafePath(stage,relative);
             if(!unique.Add(relative))throw new InvalidDataException("Повтор пути в архиве.");
-            bool allowed=relative is ".doorstop_version" or "doorstop_config.ini" or "winhttp.dll" || relative=="BepInEx"||relative.StartsWith("BepInEx/",StringComparison.OrdinalIgnoreCase)||relative=="doorstop_libs"||relative.StartsWith("doorstop_libs/",StringComparison.OrdinalIgnoreCase);
+            bool metadata=relative=="hearth-mods.json"&&!entry.FullName.EndsWith('/');
+            bool allowed=metadata||relative is ".doorstop_version" or "doorstop_config.ini" or "winhttp.dll" || relative=="BepInEx"||relative.StartsWith("BepInEx/",StringComparison.OrdinalIgnoreCase)||relative=="doorstop_libs"||relative.StartsWith("doorstop_libs/",StringComparison.OrdinalIgnoreCase);
             if(!allowed)throw new InvalidDataException("Неожиданный файл клиентского пакета: "+relative);
+            if(overlay&&!metadata&&!relative.StartsWith("BepInEx/plugins/HearthMods/",StringComparison.Ordinal)&&!(entry.FullName.EndsWith('/')&&new[]{"BepInEx","BepInEx/plugins","BepInEx/plugins/HearthMods"}.Contains(relative)))throw new InvalidDataException("Дополнительный набор может содержать только плагины HearthMods.");
+            if(metadata){if(entry.Length>2*1024*1024)throw new InvalidDataException("Метаданные клиентского набора слишком большие.");using var input=entry.Open();input.CopyTo(Stream.Null);continue;}
             if(entry.FullName.EndsWith('/')){Directory.CreateDirectory(target);continue;}
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);entry.ExtractToFile(target);result.Add(relative);
         }
-        foreach(string required in new[]{"winhttp.dll","doorstop_config.ini","BepInEx/core/BepInEx.dll","BepInEx/plugins/ValheimPlus.dll"})
+        var requiredFiles=overlay?Array.Empty<string>():requirePlus?new[]{"winhttp.dll","doorstop_config.ini","BepInEx/core/BepInEx.dll","BepInEx/plugins/ValheimPlus.dll"}:new[]{"winhttp.dll","doorstop_config.ini","BepInEx/core/BepInEx.dll"};
+        foreach(string required in requiredFiles)
             if(!result.Contains(required,StringComparer.OrdinalIgnoreCase))throw new InvalidDataException("В клиентском пакете отсутствует "+required);
         return result;
     }
-    public static void ValidatePayload(string stage,string mod)
+    public static void ValidatePayload(string stage,string? mod)
     {
-        var plus=AssemblyInfo(SafePath(stage,"BepInEx/plugins/ValheimPlus.dll"));
-        if(plus?.Name!="ValheimPlus"||plus?.Version!=mod)throw new InvalidDataException("Версия DLL в архиве не совпадает с сервером.");
+        string plusPath=SafePath(stage,"BepInEx/plugins/ValheimPlus.dll");
+        var plus=File.Exists(plusPath)?AssemblyInfo(plusPath):null;
+        if(mod is not null&&(plus?.Name!="ValheimPlus"||plus?.Version!=mod))throw new InvalidDataException("Версия DLL в архиве не совпадает с сервером.");
+        if(mod is null&&File.Exists(SafePath(stage,"BepInEx/plugins/ValheimPlus.dll")))throw new InvalidDataException("Набор BepInEx не должен содержать Valheim Plus.");
+        string plugins=SafePath(stage,"BepInEx/plugins");
+        if(Directory.Exists(plugins))foreach(string file in SafeDlls(plugins))
+        {
+            var assembly=AssemblyInfo(file);
+            bool isPlus=assembly?.Name is "ValheimPlus" or "ValheimPlusGrantapher"||Path.GetFileName(file).Equals("ValheimPlus.dll",StringComparison.OrdinalIgnoreCase)||Path.GetFileName(file).Equals("ValheimPlusGrantapher.dll",StringComparison.OrdinalIgnoreCase);
+            if(isPlus&&(mod is null||!file.Equals(plusPath,StringComparison.OrdinalIgnoreCase)))throw new InvalidDataException("В клиентском наборе найдена лишняя копия Valheim Plus.");
+        }
         if(AssemblyInfo(SafePath(stage,"BepInEx/core/BepInEx.dll")) is not { } bepin || bepin.Name!="BepInEx"||!bepin.Version.StartsWith("5."))throw new InvalidDataException("Неожиданный пакет BepInEx.");
     }
     static void SaveJournal(string folder,Journal journal)
@@ -276,13 +328,18 @@ public static class Installer
         string temporary=dest+".loki-"+Guid.NewGuid().ToString("N")+".tmp";
         try{File.Copy(source,temporary,false);File.Move(temporary,dest,true);}finally{if(File.Exists(temporary))File.Delete(temporary);}
     }
-    public static string Apply(string game,string stage,List<string> files,string mod,Action<string> log,Action<int>? beforeCopy=null)
+    public static string Apply(string game,string stage,List<string> files,string mod,Action<string> log,Action<int>? beforeCopy=null,bool generic=false)
     {
         game=Root(game);ValidateTarget(game);
         string basePath=SafePath(game,".loki-installer");Directory.CreateDirectory(basePath);
         using var mutex=new FileStream(SafePath(basePath,"install.lock"),FileMode.OpenOrCreate,FileAccess.ReadWrite,FileShare.None);
         var previous=LatestBackup(game);
         if(previous!=null&&ReadJournal(previous).State=="installing")throw new IOException("Предыдущая установка была прервана. Сначала нажмите «Восстановить».");
+        var owned=InstalledJournal(game)?.Files??[];
+        var selected=new HashSet<string>(files,StringComparer.OrdinalIgnoreCase);
+        string plusPath="BepInEx/plugins/ValheimPlus.dll";
+        string existingPlus=SafePath(game,plusPath);
+        if(generic&&File.Exists(existingPlus)&&!owned.Any(c=>c.Path.Equals(plusPath,StringComparison.OrdinalIgnoreCase)&&c.InstalledHash==Hash(existingPlus)))throw new IOException("В игре есть пользовательский Valheim Plus. Уберите его через свой менеджер модов перед установкой набора BepInEx.");
         string backup=SafePath(basePath,"backups/"+DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fffffff")+"-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(backup);
         var changes=new List<FileChange>();
         foreach(string relative in files)
@@ -293,10 +350,22 @@ public static class Installer
             if(original!=null){string copy=SafePath(backup,"original/"+relative);Directory.CreateDirectory(Path.GetDirectoryName(copy)!);File.Copy(target,copy);if(Hash(copy)!=original)throw new IOException("Ошибка проверки резервной копии.");}
             changes.Add(new(relative,original,Hash(source)));
         }
+        foreach(var item in owned)
+        {
+            bool managed=item.Path.StartsWith("BepInEx/plugins/HearthMods/",StringComparison.OrdinalIgnoreCase)||(generic&&item.Path.Equals(plusPath,StringComparison.OrdinalIgnoreCase));
+            if(!managed||selected.Contains(item.Path)||item.InstalledHash is null)continue;
+            string target=SafePath(game,item.Path);
+            if(!File.Exists(target))continue;
+            if(Hash(target)!=item.InstalledHash){log("Сохранён изменённый пользователем файл: "+item.Path);continue;}
+            string copy=SafePath(backup,"original/"+item.Path);Directory.CreateDirectory(Path.GetDirectoryName(copy)!);File.Copy(target,copy);
+            if(Hash(copy)!=item.InstalledHash)throw new IOException("Ошибка проверки резервной копии.");
+            changes.Add(new(item.Path,item.InstalledHash,null));
+        }
+        if(changes.Count>5000)throw new IOException("Слишком много изменений в клиентском наборе. Установка отменена.");
         var journal=new Journal(game,mod,"installing",changes);SaveJournal(backup,journal);
         try
         {
-            int n=0;foreach(var change in changes){CheckGameClosed();beforeCopy?.Invoke(n++);CopyAtomic(SafePath(stage,change.Path),SafePath(game,change.Path));log("Установлен: "+change.Path);}
+            int n=0;foreach(var change in changes){CheckGameClosed();beforeCopy?.Invoke(n++);if(change.InstalledHash is null){string target=SafePath(game,change.Path);if(File.Exists(target)&&Hash(target)!=change.OriginalHash)throw new IOException("Устаревший файл изменился во время установки: "+change.Path);File.Delete(target);log("Удалён устаревший файл набора: "+change.Path);}else{CopyAtomic(SafePath(stage,change.Path),SafePath(game,change.Path));log("Установлен: "+change.Path);}}
             SaveJournal(backup,journal with{State="installed"});return backup;
         }
         catch(Exception installError)
@@ -307,6 +376,23 @@ public static class Installer
         }
     }
     static Journal ReadJournal(string backup)=>JsonSerializer.Deserialize<Journal>(File.ReadAllText(SafePath(backup,"journal.json")))??throw new IOException("Повреждён журнал копии.");
+    static Journal? InstalledJournal(string game)
+    {
+        string path=SafePath(game,".loki-installer/backups");
+        if(!Directory.Exists(path))return null;
+        foreach(string folder in Directory.GetDirectories(path).OrderDescending(StringComparer.Ordinal))
+        {
+            NoLinks(folder);
+            if(!File.Exists(SafePath(folder,"journal.json")))continue;
+            var journal=ReadJournal(folder);
+            if(journal.State=="installed")
+            {
+                if(!Root(journal.GamePath).Equals(Root(game),StringComparison.OrdinalIgnoreCase)||journal.Files is null||journal.Files.Count>5000)throw new IOException("Повреждён журнал установленного набора.");
+                return journal;
+            }
+        }
+        return null;
+    }
     public static string? LatestBackup(string game)
     {
         string path=SafePath(game,".loki-installer/backups");if(!Directory.Exists(path))return null;
