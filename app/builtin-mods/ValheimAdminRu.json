@@ -1,0 +1,9 @@
+{
+  "id": "Hearth-ValheimAdmin",
+  "version": "0.4.0",
+  "games": [
+    "1.0.16",
+    "1.0.17"
+  ],
+  "sha256": "4ecee90785dd0ba92ab2bb9df601aa3d0acebdfeb79ef6a8dca0c5b4ef94060a"
+}

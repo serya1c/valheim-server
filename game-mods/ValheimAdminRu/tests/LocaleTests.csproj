@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Multiple standalone test projects share this directory. Avoid sharing
+         the SDK's intermediate apphost, which can launch the wrong test DLL. -->
+    <UseAppHost>false</UseAppHost>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../src/Locale.cs" Link="Locale.cs" />
+    <Compile Include="LocaleTests.cs" />
+  </ItemGroup>
+</Project>

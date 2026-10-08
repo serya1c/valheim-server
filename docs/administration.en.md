@@ -229,6 +229,23 @@ Up to 200 profiles, reasons for active bans, and the latest 200 moderation actio
 
 SteamID lists and actions require panel sign-in and are not published on the website. Changes are recorded in the journal.
 
+<a id="hearth-admin"></a>
+### Hearth Admin: browser tools and the F8 menu
+
+Under **Mods**, install the bundled **Hearth Admin (ValheimAdminRu)**. It uses the existing backup and restart workflow and installs on both the server and the client collection. Players must rerun the website installer and restart Valheim after the collection changes. If it was installed manually before, back up and remove the old DLL on both the server and every client first. Client installers do not automatically remove manual copies; leaving one creates a duplicate plugin.
+
+The mod requires BepInEx 5.4 or Valheim Plus. It is unavailable in vanilla mode. Server and clients must use matching mod versions. The build is checked against Valheim **1.0.16 and 1.0.17** libraries; this does not confirm a live dedicated-server and client test. Test on a copy of your world before using these actions on the main save.
+
+- **In the game:** press **F8** to open the RU / EN menu. Native server administrators are Owners; additional Moderator and Builder roles are stored by the mod. Roles control the commands available in F8.
+- **In the browser:** a signed-in Hearth administrator can use **Game tools** and select an online executor by SteamID. Its compatible client performs self actions, spawning, terrain changes, building, and hammer operations. Assistance and travel to another player use a separate target SteamID. The executor does not need an F8 role and does not gain one by executing a browser command.
+- **Saved points:** browser tools list and use points from the executor's client for the current world. Create and delete points in F8. Return uses that client's current teleport history.
+
+World-changing commands require confirmation. The panel waits for the matching client acknowledgement and does not automatically repeat a command after a timeout or session change. If the result is unknown, inspect the game before trying again. An acknowledgement is not a guarantee that every gameplay effect completed as expected. Use **Players** for web bans, unbans, and disconnects; those remain available independently of the mod.
+
+Server mod roles, audit, and state are stored under `BepInEx/config/ValheimAdminRu/` (`roles.xml`, `audit.xml`, `state.xml`). Hearth maps that directory to `/data/config/ValheimAdminRu/`, so it survives game-release changes and is included in full game backups and restoration. Client points stay on each player's computer. A world export does not transfer these mod XML files or the plugin; install the matching plugin and move any required private data separately.
+
+The filesystem bridge under `/data/admin-bridge` is private to the running server and panel. It adds no public game-control listener and is excluded from game backups and client downloads. Pending commands are discarded when a new game process starts. Do not copy bridge request files between installations or worlds. Public client packages contain the plugin, not server roles, audit, state, or bridge files.
+
 ## Server health
 
 **Server health** separates a running game process from a fresh A2S reply received within the last 30 seconds. A2S confirms the statistics query responds; test an actual client connection separately. During startup, the world is given time to load before missing replies are shown as a problem, with suggested actions and a link to the journal.

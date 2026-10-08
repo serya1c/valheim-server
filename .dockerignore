@@ -4,6 +4,8 @@ __pycache__
 *.pyc
 tests
 *.zip
+!app/builtin-mods/*.zip
+game-mods
 .git
 
 installer

@@ -86,6 +86,16 @@ Disconnection uses a short temporary ban and takes effect with a delay while the
 
 ![Player access and moderation](docs/screenshots/players-en.jpg)
 
+### Game tools and the F8 menu
+
+Install the bundled **Hearth Admin (ValheimAdminRu)** under **Mods** to add it to the server and client collection. Its in-game **F8** menu supports RU / EN and Owner, Moderator, and Builder roles. In **Game tools**, the Hearth administrator selects an online executor by SteamID for travel, player assistance, spawning, terrain, the super hammer, and building. Web access does not change that player's in-game role.
+
+These tools require BepInEx or Valheim Plus and matching mod versions on the server and players' clients; they are unavailable in vanilla mode. Builds are checked against Valheim **1.0.16 / 1.0.17** libraries; live gameplay has not been verified. Try the tools on a world copy first. [Read about permissions and saved data](docs/administration.en.md#hearth-admin).
+
+![Game tools with an executor and a saved point selected](docs/screenshots/game-admin-en.jpg)
+
+*Demo environment: fictional players and points, with no connection to a live game.*
+
 ### Keep an eye on the server
 
 **Server health** separates a running game process from a fresh **A2S statistics reply**. It also shows CPU, memory, free disk space, and the freshness of saves and backups. It helps spot problems; it does not verify the world's contents or guarantee that players can connect.

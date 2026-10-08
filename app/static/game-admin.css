@@ -1,0 +1,22 @@
+#game-admin .game-admin-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin:18px 0}
+#game-admin .game-admin-grid .card{margin:0;min-width:0}
+#game-admin .game-admin-selection{margin-top:18px}
+#game-admin select,#game-admin input{margin-bottom:12px}
+#game-admin .game-admin-grid h3{margin-bottom:8px}
+#game-admin .game-admin-grid .toolbar{margin:12px 0 0;gap:8px}
+#game-admin .game-admin-grid button{font-size:12px;padding:9px 12px}
+#game-admin .game-admin-toggles{display:flex;gap:12px;flex-wrap:wrap;margin:12px 0}
+#game-admin .game-admin-toggles label{display:flex;align-items:center;gap:7px}
+#game-admin .game-admin-toggles input{width:auto;margin:0}
+#game-admin .game-admin-records{margin:16px 0;overflow:hidden}
+#game-admin .game-admin-records summary{cursor:pointer;font-size:16px;color:var(--gold)}
+#game-admin .game-admin-records summary+*{margin-top:14px}
+#game-admin .game-admin-coordinates{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+#game-admin .game-admin-empty{color:var(--muted);font-size:13px}
+#game-admin .game-admin-point-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+#game-admin .game-admin-point-actions strong{overflow-wrap:anywhere;font-size:13px}
+#game-admin .game-admin-point-actions button{font-size:12px;padding:5px 10px}
+#game-admin #game-admin-result,#game-admin #game-admin-meta{overflow-wrap:anywhere}
+.game-admin-confirm-details{white-space:pre-wrap;display:block;overflow-wrap:anywhere;font:12px/1.7 ui-monospace,monospace;margin-top:12px}
+@media(max-width:1100px){#game-admin .game-admin-grid{grid-template-columns:1fr}}
+@media(max-width:700px){aside nav a#game-admin-nav{display:block;font-size:12px}#game-admin .section-head{align-items:start;gap:12px}#game-admin .section-head button{font-size:12px;padding:8px 10px}}
