@@ -619,16 +619,18 @@ class ModManager:
         def resolve(current, pin, required, explicit=False, activate=True):
             nonlocal staged_size
             key = current.casefold()
+            # The loader and Valheim Plus are single installs managed by the panel and
+            # checked on their own, so mods may pin different 5.4.x loader builds.
+            if self._check_external(current, pin or ''):
+                if explicit:
+                    raise ValueError('Загрузчик и Valheim Plus управляются панелью отдельно')
+                return
             if pin:
                 if key in pins and pins[key] != pin:
                     raise ValueError(f'Конфликт версий зависимости {current}: {pins[key]} и {pin}')
                 pins[key] = pin
             if current.casefold() in visiting:
                 raise ValueError('Циклическая зависимость модов')
-            if self._check_external(current, pin or ''):
-                if explicit:
-                    raise ValueError('Загрузчик и Valheim Plus управляются панелью отдельно')
-                return
             existing = packages.get(current.casefold())
             if existing and not explicit and existing['version'] == pin:
                 was_enabled = existing['enabled']

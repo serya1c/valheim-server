@@ -81,6 +81,17 @@ class ModTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.manager.set_enabled('Author-World', True)
 
+    def test_dependencies_may_pin_different_loader_builds(self):
+        # RandyKnapp-EquipmentAndQuickSlots-3.1.3 -> loader 5.4.2201 + Jotunn-2.29.2 -> loader 5.4.2333
+        self.add('ValheimModding-Jotunn', '2.29.2', ['denikson-BepInExPack_Valheim-5.4.2333'])
+        self.add('RandyKnapp-EquipmentAndQuickSlots', '3.1.3',
+                 ['denikson-BepInExPack_Valheim-5.4.2201', 'ValheimModding-Jotunn-2.29.2'])
+        self.manager.install('RandyKnapp-EquipmentAndQuickSlots', scope='client')
+        self.assertEqual(self.versions(), {'RandyKnapp-EquipmentAndQuickSlots': '3.1.3', 'ValheimModding-Jotunn': '2.29.2'})
+        self.add('Author-Old', deps=['denikson-BepInExPack_Valheim-5.3.0'])
+        with self.assertRaisesRegex(ValueError, 'BepInEx только версии 5.4'):
+            self.manager.install('Author-Old')
+
     def test_parent_update_upgrades_unshared_dependency_atomically(self):
         self.add('Author-Library')
         self.add('Author-World', deps=['Author-Library-1.0.0'])
