@@ -5,6 +5,7 @@ from pathlib import Path
 import stat
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -335,6 +336,200 @@ class ModTests(unittest.TestCase):
             with self.subTest(limit=limit), patch('mods.' + limit, value), self.assertRaisesRegex(ValueError, 'ограничения установщика'):
                 self.manager.client_archive()
             self.assertEqual(archive.read_bytes(), original)
+
+
+
+class HexiumTests(unittest.TestCase):
+    """Second source: Thunderstore first, Hexium for missing or deprecated packages."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.base = Path(self.temp.name)
+        self.manager = mods.ModManager(self.base)
+        self.thunderstore, self.deprecated, self.hexium, self.downloads = {}, set(), {}, {}
+        for target, effect in (('mods._json', self.fetch_json), ('mods._fetch', self.fetch),
+                               ('mods._hexium_index', self.hexium_index)):
+            patcher = patch(target, side_effect=effect)
+            setattr(self, target.split('.')[1].strip('_') + '_mock', patcher.start())
+            self.addCleanup(patcher.stop)
+        self.addCleanup(self.temp.cleanup)
+
+    def archive(self, ident, version, deps):
+        name = ident.split('-', 1)[1]
+        return zipped({name + '.dll': b'MZ-' + ident.encode() + version.encode()},
+                      {'name': name, 'version_number': version, 'dependencies': list(deps)})
+
+    def add_thunderstore(self, ident, version='1.0.0', deps=(), deprecated=False):
+        namespace, name = ident.split('-', 1)
+        url = f'https://thunderstore.io/package/download/{namespace}/{name}/{version}/'
+        self.thunderstore.setdefault(ident, {})[version] = {
+            'namespace': namespace, 'name': name, 'version_number': version, 'dependencies': list(deps),
+            'download_url': url, 'description': 'Thunderstore copy', 'is_active': True}
+        if deprecated:
+            self.deprecated.add(ident)
+        self.downloads[url] = self.archive(ident, version, deps)
+
+    def add_hexium(self, ident, version='1.0.0', deps=(), deprecated=False, zip_deps=None):
+        package = self.hexium.setdefault(ident.casefold(), {'full_name': ident, 'is_deprecated': deprecated, 'versions': []})
+        url = f'https://cdn.hexium.gg/upload/{len(self.downloads)}/{version}.zip'
+        package['versions'].insert(0, {'version_number': version, 'dependencies': list(deps), 'download_url': url,
+                                       'description': 'Hexium copy', 'is_active': True})
+        self.downloads[url] = self.archive(ident, version, deps if zip_deps is None else zip_deps)
+
+    def fetch_json(self, url):
+        parts = url.removeprefix(mods.API).strip('/').split('/')
+        ident = '-'.join(parts[:2])
+        releases = self.thunderstore.get(ident)
+        if not releases or len(parts) == 3 and parts[2] not in releases:
+            raise mods._Missing('Пакет мода не найден')
+        if len(parts) == 3:
+            return copy.deepcopy(releases[parts[2]])
+        latest = max(releases, key=lambda value: tuple(map(int, value.split('.'))))
+        return {'latest': copy.deepcopy(releases[latest]), 'is_deprecated': ident in self.deprecated,
+                'community_listings': [{'community': 'valheim'}]}
+
+    def fetch(self, url, limit=mods.MAX_ARCHIVE):
+        return self.downloads[url]
+
+    def hexium_index(self):
+        return copy.deepcopy(self.hexium)
+
+    def package(self, ident):
+        return next(item for item in self.manager.view()['packages'] if item['id'] == ident)
+
+    def test_live_thunderstore_package_wins_over_hexium(self):
+        self.add_thunderstore('Author-World', '1.0.0')
+        self.add_hexium('Author-World', '9.0.0')
+        self.manager.install('Author-World')
+        package = self.package('Author-World')
+        self.assertEqual((package['source'], package['version']), ('thunderstore', '1.0.0'))
+        self.hexium_index_mock.assert_not_called()
+
+    def test_deprecated_thunderstore_package_moves_to_live_hexium_copy(self):
+        self.add_thunderstore('Azumatt-AzuAreaRepair', '1.1.7', deprecated=True)
+        self.add_hexium('Azumatt-AzuAreaRepair', '1.1.8', ['denikson-BepInExPack_Valheim-5.4.2351'])
+        self.manager.install('https://thunderstore.io/c/valheim/p/Azumatt/AzuAreaRepair/', scope='client')
+        package = self.package('Azumatt-AzuAreaRepair')
+        self.assertEqual((package['source'], package['version']), ('hexium', '1.1.8'))
+        self.assertEqual(package['source_url'], 'https://valheim.hexium.gg/mods/Azumatt/AzuAreaRepair')
+        self.assertTrue(any(call.args[0].startswith('https://cdn.hexium.gg/') for call in self.fetch_mock.call_args_list))
+
+    def test_deprecated_package_without_hexium_copy_still_installs_from_thunderstore(self):
+        self.add_thunderstore('Azumatt-ImFRIENDLY_DAMMIT', '1.1.9', deprecated=True)
+        self.manager.install('Azumatt-ImFRIENDLY_DAMMIT-1.1.9')
+        self.assertEqual(self.package('Azumatt-ImFRIENDLY_DAMMIT')['source'], 'thunderstore')
+        self.manager.install('Azumatt-ImFRIENDLY_DAMMIT')
+        self.assertEqual(self.package('Azumatt-ImFRIENDLY_DAMMIT')['version'], '1.1.9')
+
+    def test_hexium_link_and_hexium_only_dependency(self):
+        self.add_hexium('Smoothbrain-ServerSync', '2.0.0')
+        self.add_hexium('Smoothbrain-Farming', '2.3.0', ['Smoothbrain-ServerSync-2.0.0'])
+        self.add_thunderstore('Smoothbrain-Farming', '2.2.2')  # live, but the link pins Hexium
+        self.manager.install('https://valheim.hexium.gg/mods/Smoothbrain/Farming', scope='both')
+        self.assertEqual({item['id']: (item['source'], item['version']) for item in self.manager.view()['packages']},
+                         {'Smoothbrain-Farming': ('hexium', '2.3.0'), 'Smoothbrain-ServerSync': ('hexium', '2.0.0')})
+        self.manager = mods.ModManager(self.base)  # persisted state with the new source loads
+        self.assertEqual(self.package('Smoothbrain-Farming')['source'], 'hexium')
+
+    def test_hexium_package_updates_from_hexium(self):
+        self.add_hexium('Azumatt-AzuAreaRepair', '1.1.8')
+        self.manager.install('https://valheim.hexium.gg/mods/Azumatt/AzuAreaRepair')
+        self.add_hexium('Azumatt-AzuAreaRepair', '1.1.9')
+        self.add_thunderstore('Azumatt-AzuAreaRepair', '1.1.7')
+        self.manager.update('Azumatt-AzuAreaRepair')
+        self.assertEqual((self.package('Azumatt-AzuAreaRepair')['source'], self.package('Azumatt-AzuAreaRepair')['version']),
+                         ('hexium', '1.1.9'))
+
+    def test_hexium_manifest_may_omit_only_the_loader_dependency(self):
+        loader = 'denikson-BepInExPack_Valheim-5.4.2351'
+        self.add_hexium('shudnal-ConditionalConfigSync', '1.0.5', [loader], zip_deps=[])
+        self.add_hexium('dreich-linkedstations', '1.0.0', [loader, 'shudnal-ConditionalConfigSync-1.0.5'],
+                        zip_deps=['shudnal-ConditionalConfigSync-1.0.5'])
+        self.manager.install('https://valheim.hexium.gg/mods/dreich/linkedstations')
+        self.assertEqual({item['id']: item['source'] for item in self.manager.view()['packages']},
+                         {'dreich-linkedstations': 'hexium', 'shudnal-ConditionalConfigSync': 'hexium'})
+
+    def test_hexium_manifest_mismatch_beyond_loader_is_rejected_and_nothing_changes(self):
+        loader = 'denikson-BepInExPack_Valheim-5.4.2351'
+        self.add_hexium('Author-Base', '1.0.0')
+        self.add_hexium('Author-World', '1.0.0', [loader, 'Author-Base-1.0.0'], zip_deps=[])
+        self.add_hexium('Author-Other', '1.0.0', [loader], zip_deps=['denikson-BepInExPack_Valheim-5.4.2200'])
+        before = self.manager.view()
+        for link in ('https://valheim.hexium.gg/mods/Author/World', 'https://valheim.hexium.gg/mods/Author/Other'):
+            with self.subTest(link=link), self.assertRaisesRegex(ValueError, 'Манифест ZIP не совпадает'):
+                self.manager.install(link)
+        self.assertEqual(self.manager.view(), before)
+        self.assertEqual(list((self.manager.root / 'packages').iterdir()), [])
+
+    def test_thunderstore_manifest_must_still_list_the_loader(self):
+        self.add_thunderstore('Author-World', '1.0.0', ['denikson-BepInExPack_Valheim-5.4.2351'])
+        self.downloads['https://thunderstore.io/package/download/Author/World/1.0.0/'] = self.archive('Author-World', '1.0.0', [])
+        with self.assertRaisesRegex(ValueError, 'Манифест ZIP не совпадает'):
+            self.manager.install('Author-World')
+
+    def test_exact_pin_missing_everywhere_is_reported_and_nothing_changes(self):
+        self.add_thunderstore('Author-World', '1.0.0')
+        before = self.manager.view()
+        with self.assertRaisesRegex(ValueError, 'не найден'):
+            self.manager.install('Author-World-2.0.0')
+        self.assertEqual(self.manager.view(), before)
+
+    def test_loader_is_never_taken_from_hexium(self):
+        self.add_hexium(mods.LOADER_ID, '5.4.2351')
+        with self.assertRaises(mods._Missing):
+            self.manager._prepare_loader()
+        self.hexium_index_mock.assert_not_called()
+
+    def test_hexium_link_formats_and_download_hosts(self):
+        self.assertEqual(mods._reference('https://valheim.hexium.gg/mods/Azumatt/AzuAreaRepair'), ('Azumatt-AzuAreaRepair', None))
+        self.assertEqual(mods._source_hint('https://valheim.hexium.gg/mods/Azumatt/AzuAreaRepair'), 'hexium')
+        self.assertIsNone(mods._source_hint('https://thunderstore.io/c/valheim/p/Azumatt/AzuAreaRepair/'))
+        for bad in ('http://valheim.hexium.gg/mods/A/B', 'https://valheim.hexium.gg/other/A/B',
+                    'https://evil.hexium.gg.example/mods/A/B', 'https://valheim.hexium.gg:8443/mods/A/B'):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                mods._reference(bad)
+        self.assertEqual(mods._network_url('https://cdn.hexium.gg/upload/247/1.1.8.zip'), 'https://cdn.hexium.gg/upload/247/1.1.8.zip')
+        for bad in ('http://cdn.hexium.gg/x.zip', 'https://cdn.hexium.gg.evil.example/x.zip', 'https://user@cdn.hexium.gg/x.zip'):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                mods._network_url(bad)
+
+
+class HexiumIndexTests(unittest.TestCase):
+    def setUp(self):
+        mods._HEXIUM_CACHE.update(at=0.0, index=None)
+        self.addCleanup(mods._HEXIUM_CACHE.update, at=0.0, index=None)
+
+    def test_listing_is_compacted_cached_and_validated(self):
+        listing = [{'full_name': 'Azumatt-AzuAreaRepair', 'is_deprecated': False, 'owner': 'Azumatt', 'categories': ['x'],
+                    'versions': [{'version_number': '1.1.8', 'dependencies': [], 'download_url': 'https://cdn.hexium.gg/upload/247/1.1.8.zip',
+                                  'description': 'Repair', 'is_active': True, 'downloads': 5, 'icon': 'https://cdn.hexium.gg/i.png'}]},
+                   'junk', {'name': 'no full name'}]
+        with patch('mods._fetch', return_value=json.dumps(listing).encode()) as fetch:
+            index = mods._hexium_index()
+            self.assertIs(mods._hexium_index(), index)
+            fetch.assert_called_once_with(mods.HEXIUM_INDEX, mods.MAX_INDEX)
+        self.assertEqual(list(index), ['azumatt-azuarearepair'])
+        self.assertEqual(set(index['azumatt-azuarearepair']['versions'][0]),
+                         {'version_number', 'dependencies', 'download_url', 'description', 'is_active'})
+        metadata = mods._hexium_metadata('Azumatt-AzuAreaRepair')
+        self.assertEqual((metadata['version_number'], metadata['source']), ('1.1.8', 'hexium'))
+        with self.assertRaises(mods._Missing):
+            mods._hexium_metadata('Azumatt-AzuAreaRepair', '9.9.9')
+        with patch('mods.time.monotonic', return_value=time_after(mods.HEXIUM_TTL)), \
+                patch('mods._fetch', return_value=b'[]') as fetch:
+            self.assertEqual(mods._hexium_index(), {})
+            fetch.assert_called_once()
+
+    def test_invalid_listing_is_rejected_and_not_cached(self):
+        for payload in (b'{"not": "a list"}', b'<!DOCTYPE html>'):
+            with self.subTest(payload=payload), patch('mods._fetch', return_value=payload), \
+                    self.assertRaisesRegex(ValueError, 'Hexium'):
+                mods._hexium_index()
+        self.assertIsNone(mods._HEXIUM_CACHE['index'])
+
+
+def time_after(seconds):
+    return time.monotonic() + seconds + 1
 
 
 if __name__ == '__main__':
