@@ -76,7 +76,9 @@ Enabled client mods are included in the downloadable set on the landing page. Th
 
 Hearth supports **BepInEx 5.4 plugins**; packages requiring separate patchers or native components need another installation method. Before applying mod changes, Hearth stops the game and makes a backup. If startup fails, it attempts to restore the previous mods, world, and configuration. Check each mod's requirements: startup checks cannot guarantee that different mods work together.
 
-![Mod packages and client downloads](docs/screenshots/mods-en.jpg)
+![Thunderstore, Hexium, ZIP, and the bundled Hearth Admin](docs/screenshots/mods-en.jpg)
+
+*Hearth 1.7.0 screenshot with a demo mod collection.*
 
 ### Manage players by SteamID
 
@@ -136,6 +138,8 @@ There are two separate updates:
 - **Hearth panel:** check the panel version in **Updates** to see the latest release and the suggested command. Update the project files, then rebuild with Docker Compose. The panel does not rebuild itself.
 
 ![Game updates and panel version check](docs/screenshots/updates-en.jpg)
+
+*Hearth 1.7.0 screenshot from a demo instance.*
 
 Before upgrading the panel, create and download a game backup. Update the code in the **same project directory**, keeping the **same Compose project name and data volume**. If you use Git, a normal upgrade is:
 
