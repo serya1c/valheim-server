@@ -4,7 +4,7 @@
 
 Hearth gives your Valheim server a home in the browser. Set up a world, invite friends, manage players, and keep backups from one panel, in English or Russian.
 
-Play vanilla, use Grantapher's Valheim Plus, or build your own BepInEx mod set. Players get a separate landing page with connection details and installers for the client mods they need.
+Play vanilla, use Grantapher's Valheim Plus, or build your own BepInEx mod set from Thunderstore, Hexium, and ZIP archives. Players get a separate landing page with connection details and installers for the client mods they need.
 
 [Quick start](#quick-start) · [Features and screenshots](#tour) · [Administration guide](docs/administration.en.md) · [Releases](https://github.com/serya1c/valheim-server/releases) · [Report a problem](https://github.com/serya1c/valheim-server/issues)
 
@@ -50,7 +50,7 @@ For friends outside your network, open or forward **UDP 2456–2457** on the hos
 |---|---|
 | Start or stop the server and see recent activity | Overview |
 | Choose world rules or adjust Valheim Plus | Settings |
-| Add Thunderstore or ZIP mods | Mods |
+| Add Thunderstore, Hexium, or ZIP mods | Mods |
 | Ban players or grant in-game admin rights | Players |
 | Check resources, make backups, or move a world | Server health / World and backups |
 | Schedule work and send Discord notifications | Maintenance |
@@ -68,7 +68,9 @@ Game settings are saved after a graceful stop and a backup; website edits do not
 
 ### Bring your mods — and help friends install them
 
-Use **Mods** to install packages from Thunderstore or upload a ZIP, manage dependencies, and enable or disable packages. Choose whether each package belongs on the server, on players' computers, or on both.
+Use **Mods** to install packages from Thunderstore or Hexium, or upload a ZIP. A Hexium link selects that source. Package identifiers use Thunderstore first, then Hexium when a package or required version is missing, or a live replacement exists for a deprecated package. Network errors do not trigger this fallback. Use `Author-Package-1.2.3` to select that exact release. Enable, disable, update, or remove packages, and choose whether they belong on the server, on players' computers, or on both.
+
+An ordinary dependency version is a minimum: a suitable installed version is kept; otherwise Hearth looks for the requested version, then an available newer one. Explicitly selected package versions and V+ requirements remain exact. The [administration guide](docs/administration.en.md#server-modes-and-additional-mods) explains source selection in detail.
 
 Enabled client mods are included in the downloadable set on the landing page. The **Windows** and **Linux / Steam Proton** installers use that server's published set and versions. Players run the installer again after you change the set; the game itself is updated through Steam. The installers require the site's HTTPS address on port 443.
 

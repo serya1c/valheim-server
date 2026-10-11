@@ -145,8 +145,11 @@ def _hexium_index():
         for package in listing:
             if not isinstance(package, dict) or not isinstance(package.get('full_name'), str):
                 continue
+            listed_versions = package.get('versions', [])
+            if not isinstance(listed_versions, list):
+                raise ValueError('Hexium вернул недопустимый список версий пакета')
             versions = []
-            for item in package.get('versions') or []:
+            for item in listed_versions:
                 if isinstance(item, dict):
                     versions.append({key: item.get(key) for key in
                                      ('version_number', 'dependencies', 'download_url', 'description', 'is_active')})
@@ -157,7 +160,7 @@ def _hexium_index():
         return index
 
 
-def _hexium_metadata(ident, version=None):
+def _hexium_metadata(ident, version=None, minimum=False):
     package = _hexium_index().get(ident.casefold())
     if not package or package['full_name'].casefold() != ident.casefold():
         raise _Missing('Пакет мода не найден')
@@ -166,12 +169,13 @@ def _hexium_metadata(ident, version=None):
                   if item.get('is_active') is not False and isinstance(item.get('version_number'), str)
                   and VERSION.fullmatch(item['version_number'])]
     if version:
-        candidates = [item for item in candidates if item['version_number'] == version]
+        exact = [item for item in candidates if item['version_number'] == version]
+        candidates = exact if exact or not minimum else [item for item in candidates if _satisfies(item['version_number'], version)]
     if not candidates:
         raise _Missing('Пакет мода не найден')
-    chosen = max(candidates, key=lambda item: tuple(int(part) for part in item['version_number'].split('.')))
+    chosen = max(candidates, key=lambda item: _version_key(item['version_number']))
     return {'namespace': namespace, 'name': name, 'version_number': chosen['version_number'],
-            'dependencies': chosen.get('dependencies') or [], 'download_url': chosen.get('download_url'),
+            'dependencies': chosen.get('dependencies', []), 'download_url': chosen.get('download_url'),
             'description': chosen.get('description') or '', 'is_active': True,
             'is_deprecated': package['is_deprecated'], 'source': 'hexium'}
 
@@ -307,7 +311,8 @@ def _plugin_path(name):
 def _version_key(value):
     if not isinstance(value, str) or not VERSION.fullmatch(value):
         raise ValueError('Недопустимая версия мода')
-    return tuple(int(part) for part in value.split('.'))
+    parts = tuple(int(part) for part in value.split('.'))
+    return parts + (0,) if len(parts) == 3 else parts
 
 
 def _satisfies(version, required):
@@ -448,48 +453,84 @@ class ModManager:
             return {'version': loader['version'] if loader else None, 'ready': bool(loader)}
 
     @staticmethod
-    def _thunderstore(ident, version=None):
+    def _thunderstore(ident, version=None, minimum=False):
         namespace, name = ident.split('-', 1)
-        result = _json(API + namespace + '/' + name + '/' + (version + '/' if version else ''))
-        if version is None:
-            listings = result.get('community_listings', [])
-            if listings and not any(item.get('community') == 'valheim' for item in listings):
-                raise ValueError('Пакет Thunderstore не относится к Valheim')
-            deprecated = result.get('is_deprecated') is True
-            result = result.get('latest', {})
-            if isinstance(result, dict):
-                result = {**result, 'is_deprecated': deprecated}
+        endpoint = API + namespace + '/' + name + '/'
+        # Deprecation and community membership belong to the package, not the
+        # version endpoint. Read them for pinned dependencies as well.
+        package = _json(endpoint)
+        listings = package.get('community_listings', [])
+        if not isinstance(listings, list) or any(not isinstance(item, dict) for item in listings):
+            raise ValueError('Thunderstore вернул недопустимые данные пакета')
+        if listings and not any(item.get('community') == 'valheim' for item in listings):
+            raise ValueError('Пакет Thunderstore не относится к Valheim')
+        result = package.get('latest', {})
+        if version is not None:
+            try:
+                exact = _json(endpoint + version + '/')
+                if exact.get('is_active') is False:
+                    raise _Missing('Пакет мода не найден')
+                if exact.get('version_number') != version:
+                    raise ValueError('Источник вернул другую или недоступную версию пакета')
+                result = exact
+            except _Missing:
+                if not minimum:
+                    raise
+                if not isinstance(result, dict):
+                    raise ValueError('Thunderstore вернул недопустимые данные пакета')
+                if result.get('is_active') is False or not _satisfies(result.get('version_number'), version):
+                    raise _Missing('Пакет мода не найден')
         if not isinstance(result, dict):
             raise ValueError('Thunderstore вернул недопустимые данные пакета')
-        return {**result, 'source': 'thunderstore'}
+        if result.get('is_active') is False:
+            raise _Missing('Пакет мода не найден')
+        return {**result, 'is_deprecated': package.get('is_deprecated') is True, 'source': 'thunderstore'}
 
-    def _metadata(self, ident, version=None, prefer=None):
+    def _metadata(self, ident, version=None, prefer=None, minimum=False):
         """Thunderstore first; Hexium when the package is missing there or is
         deprecated there while Hexium carries a live copy. prefer='thunderstore'
         never consults Hexium; prefer='hexium' uses only Hexium."""
         if prefer == 'hexium':
-            return self._checked(ident, version, _hexium_metadata(ident, version))
+            return self._checked(ident, version, _hexium_metadata(ident, version, minimum=minimum), minimum=minimum)
         try:
-            result = self._thunderstore(ident, version)
+            result = self._thunderstore(ident, version, minimum=minimum)
         except _Missing:
             if prefer == 'thunderstore':
                 raise
-            return self._checked(ident, version, _hexium_metadata(ident, version))
+            return self._checked(ident, version, _hexium_metadata(ident, version, minimum=minimum), minimum=minimum)
+        result = self._checked(ident, version, result, minimum=minimum)
+        if prefer != 'thunderstore' and minimum and version and result.get('version_number') != version:
+            # Before accepting a newer TS fallback, look for the requested
+            # release on Hexium. Explicit user pins never reach this branch.
+            try:
+                exact = self._checked(ident, version, _hexium_metadata(ident, version), minimum=minimum)
+            except _Missing:
+                exact = None
+            except ValueError:
+                return result  # Optional alternative lookup cannot invalidate a valid TS release.
+            if exact:
+                return exact
         if prefer != 'thunderstore' and result.get('is_deprecated'):
             try:
-                alternative = _hexium_metadata(ident, version)
+                alternative = self._checked(ident, version, _hexium_metadata(ident, version, minimum=minimum), minimum=minimum)
             except ValueError:
                 alternative = None
             if alternative and not alternative['is_deprecated']:
-                return self._checked(ident, version, alternative)
-        return self._checked(ident, version, result)
+                return alternative
+        return result
 
     @staticmethod
-    def _checked(ident, version, result):
+    def _checked(ident, version, result, minimum=False):
         namespace, name = ident.split('-', 1)
         number = result.get('version_number')
-        if (not isinstance(number, str) or not VERSION.fullmatch(number) or version and version != number
-                or result.get('namespace', namespace) != namespace or result.get('name', name) != name
+        actual_namespace, actual_name = result.get('namespace', namespace), result.get('name', name)
+        same_identity = actual_namespace == namespace and actual_name == name
+        if result.get('source') == 'hexium':
+            same_identity = (isinstance(actual_namespace, str) and isinstance(actual_name, str)
+                             and actual_namespace.casefold() == namespace.casefold() and actual_name.casefold() == name.casefold())
+        if (not isinstance(number, str) or not VERSION.fullmatch(number)
+                or version and (not _satisfies(number, version) if minimum else version != number)
+                or not same_identity
                 or result.get('is_active') is False):
             raise ValueError('Источник вернул другую или недоступную версию пакета')
         dependencies = result.get('dependencies', [])
@@ -624,55 +665,145 @@ class ModManager:
 
     def _transaction(self, ident, version, scope, payload=None, local_name=None, active=True, builtin=False, prefer=None):
         proposed = copy.deepcopy(self.state)
-        packages = {package['id'].casefold(): package for package in proposed['packages']}
-        created, visiting, pins = [], set(), {}
+        original = {package['id'].casefold(): package for package in proposed['packages']}
+        selected = dict(original)
+        root = ident.casefold()
+        created, metadata_cache = [], {}
         staged_size = 0
-        def resolve(current, pin, required, explicit=False, activate=True):
-            nonlocal staged_size
-            key = current.casefold()
-            # The loader and Valheim Plus are single installs managed by the panel and
-            # checked on their own, so mods may pin different 5.4.x loader builds.
-            if self._check_external(current, pin or ''):
-                if explicit:
-                    raise ValueError('Загрузчик и Valheim Plus управляются панелью отдельно')
-                return
-            if pin and (key not in pins or not _satisfies(pins[key], pin)):
-                pins[key] = pin
-            if current.casefold() in visiting:
-                raise ValueError('Циклическая зависимость модов')
-            existing = packages.get(current.casefold())
-            # Keep an installed or already staged version that is new enough; otherwise
-            # stage the required one, replacing an older copy (the newest requirement wins).
-            if existing and not explicit and _satisfies(existing['version'], pin):
-                was_enabled = existing['enabled']
-                existing['enabled'] = existing['enabled'] or activate
-                existing['scope'] = _join_scope(existing['scope'], required) if was_enabled else required
-                visiting.add(current.casefold())
-                for dependency in existing['dependencies']:
-                    dep_id, dep_version = _reference(dependency, exact=True)
-                    resolve(dep_id, dep_version, existing['scope'], activate=existing['enabled'])
-                visiting.remove(current.casefold())
-                return
-            if existing and not explicit and existing['enabled']:
-                # Keep an independently enabled dependency available in its
-                # old runtime scope while upgrading the shared package.
-                activate = True
-                required = _join_scope(existing['scope'], required)
-            if len(packages) >= MAX_PACKAGES and not existing:
-                raise ValueError('Слишком много модов')
-            visiting.add(current.casefold())
-            if explicit and payload is not None:
+
+        def descriptor(current, metadata):
+            source = metadata['source']
+            return {'id': current, 'name': current.split('-', 1)[1],
+                    'version': metadata['version_number'], 'source': source,
+                    'source_url': ('https://thunderstore.io/c/valheim/p/' + current.replace('-', '/', 1) + '/'
+                                   if source == 'thunderstore' else HEXIUM_PAGE + current.replace('-', '/', 1)),
+                    'dependencies': list(dict.fromkeys(metadata['dependencies'])),
+                    'description': str(metadata.get('description', ''))[:2000],
+                    '_download_url': metadata['download_url']}
+
+        def load_package(current, pin, explicit=False):
+            cache_key = (current.casefold(), pin, explicit)
+            if cache_key not in metadata_cache:
+                if len(metadata_cache) >= MAX_PACKAGES * 4:
+                    raise ValueError('Слишком сложный граф зависимостей модов')
+                try:
+                    metadata_cache[cache_key] = self._metadata(current, pin, prefer if explicit else None,
+                                                              minimum=not explicit)
+                except ValueError as error:
+                    metadata_cache[cache_key] = error
+            if isinstance(metadata_cache[cache_key], ValueError):
+                raise metadata_cache[cache_key]
+            return descriptor(current, metadata_cache[cache_key])
+
+        def requirements():
+            # Recompute reachability, scopes and minima from the selected versions.
+            # All previously installed enabled packages remain independent roots.
+            result = {key: {'id': package['id'], 'version': None, 'scope': package['scope'], 'enabled': True}
+                      for key, package in original.items() if package['enabled'] and key != root}
+            result[root] = {'id': ident, 'version': None, 'scope': scope, 'enabled': active}
+            pending, position = list(result), 0
+            while position < len(pending):
+                key = pending[position]
+                position += 1
+                if key not in selected:
+                    continue
+                parent = result[key]
+                for reference in selected[key]['dependencies']:
+                    dep_id, minimum = _reference(reference, exact=True)
+                    if _external(dep_id):
+                        continue
+                    dep_key = dep_id.casefold()
+                    previous = result.get(dep_key)
+                    requirement = {'id': dep_id, 'version': minimum,
+                                   'scope': parent['scope'], 'enabled': parent['enabled']}
+                    if previous:
+                        requirement['id'] = previous['id']
+                        if previous['version'] and _satisfies(previous['version'], minimum):
+                            requirement['version'] = previous['version']
+                        requirement['scope'] = _join_scope(previous['scope'], parent['scope'])
+                        requirement['enabled'] = previous['enabled'] or parent['enabled']
+                    if requirement != previous:
+                        result[dep_key] = requirement
+                        pending.append(dep_key)
+            return result
+
+        def validate_cycles(required):
+            visiting, finished = set(), set()
+            def visit(key):
+                if key in visiting:
+                    raise ValueError('Циклическая зависимость модов')
+                if key in finished:
+                    return
+                visiting.add(key)
+                for reference in selected[key]['dependencies']:
+                    dep_id, pin = _reference(reference, exact=True)
+                    if not self._check_external(dep_id, pin):
+                        visit(dep_id.casefold())
+                visiting.remove(key)
+                finished.add(key)
+            for key in required:
+                visit(key)
+
+        try:
+            if self._check_external(ident, version or ''):
+                raise ValueError('Загрузчик и Valheim Plus управляются панелью отдельно')
+            if payload is not None:
                 stored, metadata = self._store(payload, _plugin_path)
                 created.append(stored['storage'])
                 number = metadata.get('version_number', '0.0.0')
                 dependencies = metadata.get('dependencies', [])
                 if not isinstance(number, str) or not VERSION.fullmatch(number) or not isinstance(dependencies, list) or len(dependencies) > MAX_PACKAGES:
                     raise ValueError('Недопустимая версия или зависимости в манифесте ZIP')
-                source, description = 'builtin' if builtin else 'manual', metadata.get('description', '')
+                for dependency in dependencies:
+                    _reference(dependency, exact=True)
+                selected[root] = {'id': ident, 'name': local_name or ident.split('-', 1)[1],
+                                  'version': number, 'source': 'builtin' if builtin else 'manual', 'source_url': '',
+                                  'dependencies': list(dict.fromkeys(dependencies)),
+                                  'description': str(metadata.get('description', ''))[:2000], **stored}
+                staged_size = stored['size']
             else:
-                metadata = self._metadata(current, pin, prefer if explicit else None)
-                number, dependencies = metadata['version_number'], metadata['dependencies']
-                stored, manifest = self._store(_fetch(metadata['download_url']), _plugin_path)
+                selected[root] = load_package(ident, version, explicit=True)
+
+            # Solve metadata before storing archives. A missing dependency of a
+            # superseded version must not prevent another branch from upgrading it.
+            for _ in range(MAX_PACKAGES * 4):
+                required = requirements()
+                changed, errors = False, []
+                for key in sorted(required):
+                    if key == root:
+                        continue  # Explicit versions and the user's root scope are fixed.
+                    requirement = required[key]
+                    current = selected.get(key)
+                    if current and (requirement['version'] is None or _satisfies(current['version'], requirement['version'])):
+                        continue
+                    try:
+                        selected[key] = load_package(requirement['id'], requirement['version'])
+                        changed = True
+                    except ValueError as error:
+                        errors.append(error)
+                if not changed:
+                    if errors:
+                        raise errors[0]
+                    break
+            else:
+                raise ValueError('Слишком сложный граф зависимостей модов')
+
+            keep = set(original) | set(required)
+            if len(keep) > MAX_PACKAGES:
+                raise ValueError('Слишком много модов')
+            validate_cycles(required)
+            packages = {}
+            for key in sorted(keep):
+                if key not in required:
+                    packages[key] = original[key]  # Restore even temporary scope/version changes.
+                    continue
+                package = copy.deepcopy(selected[key])
+                package['scope'] = scope if key == root else required[key]['scope']
+                package['enabled'] = active if key == root else required[key]['enabled']
+                packages[key] = package
+                if '_download_url' not in package:
+                    continue
+                stored, manifest = self._store(_fetch(package.pop('_download_url')), _plugin_path)
                 created.append(stored['storage'])
                 if manifest:
                     manifest_dependencies = manifest.get('dependencies', [])
@@ -680,33 +811,16 @@ class ModManager:
                         raise ValueError('Недопустимые зависимости в манифесте ZIP')
                     for dependency in manifest_dependencies:
                         _reference(dependency, exact=True)
-                    expected = set(dependencies)
-                    if metadata['source'] == 'hexium':
+                    expected = set(package['dependencies'])
+                    if package['source'] == 'hexium':
                         # Hexium adds the loader to every API listing; uploaded manifests usually omit it.
                         expected -= {item for item in expected - set(manifest_dependencies) if item.startswith(LOADER_ID + '-')}
-                    if manifest.get('version_number') != number or set(manifest_dependencies) != expected:
+                    if manifest.get('version_number') != package['version'] or set(manifest_dependencies) != expected:
                         raise ValueError('Манифест ZIP не совпадает с данными источника')
-                source, description = metadata['source'], metadata.get('description', '')
-            staged_size += stored['size']
-            if staged_size > MAX_TRANSACTION:
-                raise ValueError('Общий размер устанавливаемых модов превышает допустимый размер')
-            if key in pins and not _satisfies(number, pins[key]):
-                raise ValueError(f'Конфликт версий зависимости {current}')
-            pins[key] = number
-            for dependency in dependencies:
-                _reference(dependency, exact=True)
-            package = {'id': current, 'name': local_name if explicit and local_name else current.split('-', 1)[1],
-                       'version': number, 'enabled': activate, 'scope': required, 'source': source,
-                       'source_url': ('https://thunderstore.io/c/valheim/p/' + current.replace('-', '/', 1) + '/' if source == 'thunderstore'
-                                      else HEXIUM_PAGE + current.replace('-', '/', 1) if source == 'hexium' else ''),
-                       'dependencies': list(dict.fromkeys(dependencies)), 'description': str(description)[:2000], **stored}
-            packages[current.casefold()] = package
-            for dependency in package['dependencies']:
-                dep_id, dep_version = _reference(dependency, exact=True)
-                resolve(dep_id, dep_version, required, activate=activate)
-            visiting.remove(current.casefold())
-        try:
-            resolve(ident, version, scope, explicit=True, activate=active)
+                package.update(stored)
+                staged_size += stored['size']
+                if staged_size > MAX_TRANSACTION:
+                    raise ValueError('Общий размер устанавливаемых модов превышает допустимый размер')
             proposed['packages'] = sorted(packages.values(), key=lambda package: package['id'].casefold())
             self._validate_graph(proposed['packages'])
             self._publish(proposed)

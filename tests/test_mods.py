@@ -32,10 +32,13 @@ class ModTests(unittest.TestCase):
         self.metadata, self.downloads, self.latest = {}, {}, {}
         self.json_patch = patch('mods._json', side_effect=self.fetch_json)
         self.fetch_patch = patch('mods._fetch', side_effect=self.fetch)
+        self.hexium_patch = patch('mods._hexium_index', return_value={})
         self.json_mock = self.json_patch.start()
         self.fetch_mock = self.fetch_patch.start()
+        self.hexium_patch.start()
         self.addCleanup(self.json_patch.stop)
         self.addCleanup(self.fetch_patch.stop)
+        self.addCleanup(self.hexium_patch.stop)
         self.addCleanup(self.temp.cleanup)
 
     def add(self, ident, version='1.0.0', deps=(), files=None):
@@ -53,8 +56,15 @@ class ModTests(unittest.TestCase):
         parts = url.removeprefix(mods.API).strip('/').split('/')
         ident = '-'.join(parts[:2])
         if len(parts) == 2:
-            return {'latest': copy.deepcopy(self.metadata[(ident, self.latest[ident])]), 'community_listings': [{'community': 'valheim'}]}
-        return copy.deepcopy(self.metadata[(ident, parts[2])])
+            version = self.latest.get(ident)
+        else:
+            version = parts[2]
+        record = self.metadata.get((ident, version))
+        if record is None:
+            raise mods._Missing('Пакет мода не найден')
+        if len(parts) == 2:
+            return {'latest': copy.deepcopy(record), 'community_listings': [{'community': 'valheim'}]}
+        return copy.deepcopy(record)
 
     def fetch(self, url, limit=mods.MAX_ARCHIVE):
         return self.downloads[url]
@@ -153,6 +163,124 @@ class ModTests(unittest.TestCase):
         self.manager.update('RandyKnapp-EpicLoot')
         self.assertEqual(self.versions(), {'RandyKnapp-EpicLoot': '0.14.13', 'ValheimModding-Jotunn': '2.30.2'})
         self.assertEqual(next(item for item in self.manager.view()['packages'] if item['id'] == 'ValheimModding-Jotunn')['scope'], 'both')
+
+    def test_missing_dependency_minimum_uses_newer_release_but_root_pin_is_exact(self):
+        self.add('Author-Library', '2.0.0')
+        self.add('Author-World', deps=['Author-Library-1.0.0'])
+        self.manager.install('Author-World', scope='client')
+        self.assertEqual(self.versions(), {'Author-Library': '2.0.0', 'Author-World': '1.0.0'})
+        before = self.manager.view()
+        manifest = self.manager.manifest.read_bytes()
+        folders = set((self.manager.root / 'packages').iterdir())
+        with self.assertRaises(ValueError):
+            self.manager.install('Author-Library-1.0.0')
+        self.assertEqual(self.manager.view(), before)
+        self.assertEqual(self.manager.manifest.read_bytes(), manifest)
+        self.assertEqual(set((self.manager.root / 'packages').iterdir()), folders)
+
+    def test_available_dependency_minimum_is_preferred_over_newer_release(self):
+        self.add('Author-Library', '1.0.0')
+        self.add('Author-Library', '2.0.0')
+        self.add('Author-World', deps=['Author-Library-1.0.0'])
+        self.manager.install('Author-World')
+        self.assertEqual(self.versions()['Author-Library'], '1.0.0')
+
+    def test_installed_three_part_version_satisfies_zero_revision_minimum(self):
+        self.add('Author-Library', '1.0.0')
+        self.manager.install('Author-Library', scope='both')
+        self.add('Author-World', deps=['Author-Library-1.0.0.0'])
+        self.manager.install('Author-World', scope='client')
+        self.assertEqual(self.versions(), {'Author-Library': '1.0.0', 'Author-World': '1.0.0'})
+        self.assertFalse(any('/Library/1.0.0.0/' in call.args[0] for call in self.fetch_mock.call_args_list))
+
+    def test_final_graph_drops_dependencies_of_superseded_library_version(self):
+        self.add('Author-Obsolete')
+        self.add('Author-Library', '1.0.0', ['Author-Obsolete-1.0.0'])
+        self.add('Author-Library', '2.0.0')
+        self.add('Author-First', deps=['Author-Library-1.0.0'])
+        self.add('Author-Second', deps=['Author-Library-2.0.0'])
+        self.add('Author-World', deps=['Author-First-1.0.0', 'Author-Second-1.0.0'])
+        self.manager.install('Author-World', scope='client')
+        self.assertEqual(self.versions(), {'Author-World': '1.0.0', 'Author-First': '1.0.0',
+                                          'Author-Second': '1.0.0', 'Author-Library': '2.0.0'})
+        self.assertEqual(len(list((self.manager.root / 'packages').iterdir())), 4)
+        with zipfile.ZipFile(self.manager.client_archive()) as archive:
+            self.assertFalse(any('/Author-Obsolete/' in name for name in archive.namelist()))
+
+    def test_superseded_dependency_preserves_independently_installed_package_and_scope(self):
+        self.add('Author-Obsolete')
+        self.manager.install('Author-Obsolete', scope='server')
+        original = self.manager.view()['packages'][0]
+        self.add('Author-Library', '1.0.0', ['Author-Obsolete-1.0.0'])
+        self.add('Author-Library', '2.0.0')
+        self.add('Author-First', deps=['Author-Library-1.0.0'])
+        self.add('Author-Second', deps=['Author-Library-2.0.0'])
+        self.add('Author-World', deps=['Author-First-1.0.0', 'Author-Second-1.0.0'])
+        self.manager.install('Author-World', scope='client')
+        retained = next(package for package in self.manager.view()['packages'] if package['id'] == 'Author-Obsolete')
+        self.assertEqual(retained, original)
+        with zipfile.ZipFile(self.manager.client_archive()) as archive:
+            self.assertFalse(any('/Author-Obsolete/' in name for name in archive.namelist()))
+        self.manager = mods.ModManager(self.base)
+        retained = next(package for package in self.manager.view()['packages'] if package['id'] == 'Author-Obsolete')
+        self.assertEqual(retained, original)
+
+    def test_disabled_root_update_drops_obsolete_dependencies_and_enables_nothing(self):
+        self.add('Author-World')
+        self.manager.install('Author-World', scope='client')
+        self.manager.set_enabled('Author-World', False)
+        self.add('Author-Obsolete')
+        self.add('Author-Library', '1.0.0', ['Author-Obsolete-1.0.0'])
+        self.add('Author-Library', '2.0.0')
+        self.add('Author-First', deps=['Author-Library-1.0.0'])
+        self.add('Author-Second', deps=['Author-Library-2.0.0'])
+        self.add('Author-World', '2.0.0', ['Author-First-1.0.0', 'Author-Second-1.0.0'])
+        self.manager.update('Author-World')
+        self.assertEqual(self.versions(), {'Author-World': '2.0.0', 'Author-First': '1.0.0',
+                                          'Author-Second': '1.0.0', 'Author-Library': '2.0.0'})
+        self.assertTrue(all(not package['enabled'] for package in self.manager.view()['packages']))
+        self.assertIsNone(self.manager.client_archive())
+
+    def test_final_acyclic_graph_resolves_in_both_dependency_orders(self):
+        self.add('Author-Library', '1.0.0', ['Author-Second-1.0.0'])
+        self.add('Author-Library', '2.0.0')
+        self.add('Author-First', deps=['Author-Library-1.0.0'])
+        self.add('Author-Second', deps=['Author-Library-2.0.0'])
+        for index, dependencies in enumerate((['Author-First-1.0.0', 'Author-Second-1.0.0'],
+                                              ['Author-Second-1.0.0', 'Author-First-1.0.0'])):
+            with self.subTest(dependencies=dependencies):
+                self.manager = mods.ModManager(self.base / str(index))
+                self.add('Author-World', deps=dependencies)
+                self.manager.install('Author-World')
+                self.assertEqual(self.versions(), {'Author-World': '1.0.0', 'Author-First': '1.0.0',
+                                                  'Author-Second': '1.0.0', 'Author-Library': '2.0.0'})
+
+    def test_true_dependency_cycle_rejects_atomically(self):
+        self.add('Author-Keep')
+        self.manager.install('Author-Keep', scope='server')
+        self.add('Author-First', deps=['Author-Second-1.0.0'])
+        self.add('Author-Second', deps=['Author-First-1.0.0'])
+        before = self.manager.view()
+        manifest = self.manager.manifest.read_bytes()
+        folders = set((self.manager.root / 'packages').iterdir())
+        with self.assertRaisesRegex(ValueError, 'Циклическая'):
+            self.manager.install('Author-First')
+        self.assertEqual(self.manager.view(), before)
+        self.assertEqual(self.manager.manifest.read_bytes(), manifest)
+        self.assertEqual(set((self.manager.root / 'packages').iterdir()), folders)
+        self.assertEqual(mods.ModManager(self.base).view(), before)
+
+    def test_missing_transitive_dependency_of_superseded_version_does_not_block_final_graph(self):
+        self.add('Author-Library', '1.0.0', ['Author-Missing-1.0.0'])
+        self.add('Author-Library', '2.0.0')
+        self.add('Author-First', deps=['Author-Library-1.0.0'])
+        self.add('Author-Other', deps=['Author-Library-2.0.0'])
+        self.add('Author-Second', deps=['Author-Other-1.0.0'])
+        self.add('Author-World', deps=['Author-First-1.0.0', 'Author-Second-1.0.0'])
+        self.manager.install('Author-World')
+        self.assertEqual(self.versions(), {'Author-World': '1.0.0', 'Author-First': '1.0.0',
+                                          'Author-Second': '1.0.0', 'Author-Other': '1.0.0',
+                                          'Author-Library': '2.0.0'})
 
     def test_scope_expands_dependency_and_exports_only_client_packages(self):
         self.add('Author-Library')
@@ -270,7 +398,7 @@ class ModTests(unittest.TestCase):
         self.assertEqual(len(self.manager.view()['packages']), 2)
 
     def test_external_plus_exact_version_and_candidate_mapping(self):
-        self.add('Author-World', deps=['Grantapher-ValheimPlus-0.10.2.0', 'denikson-BepInExPack_Valheim-5.4.2333'])
+        metadata = self.add('Author-World', deps=['Grantapher-ValheimPlus-0.10.2.0', 'denikson-BepInExPack_Valheim-5.4.2333'])
         with self.assertRaisesRegex(ValueError, 'Valheim Plus'):
             self.manager.install('Author-World')
         self.manager.external_versions = lambda: {'ValheimPlus': '0.10.2.0'}
@@ -280,7 +408,7 @@ class ModTests(unittest.TestCase):
         for external in ({}, {'ValheimPlus': '0.10.3.0'}):
             with self.assertRaisesRegex(ValueError, 'Valheim Plus'):
                 self.manager.validate_external(external)
-        self.assertEqual(self.fetch_mock.call_count, 2)  # only plugin, never V+/loader archives
+        self.assertEqual([call.args[0] for call in self.fetch_mock.call_args_list], [metadata['download_url']])
 
     def loader(self, version='5.4.2351'):
         self.add(mods.LOADER_ID, version, files={
@@ -444,6 +572,44 @@ class HexiumTests(unittest.TestCase):
         self.assertEqual(self.package('Azumatt-ImFRIENDLY_DAMMIT')['source'], 'thunderstore')
         self.manager.install('Azumatt-ImFRIENDLY_DAMMIT')
         self.assertEqual(self.package('Azumatt-ImFRIENDLY_DAMMIT')['version'], '1.1.9')
+
+    def test_deprecated_exact_dependency_uses_live_hexium_copy_of_required_version(self):
+        dependency = 'shudnal-ConditionalConfigSync'
+        self.add_thunderstore(dependency, '1.0.5', deprecated=True)
+        self.add_hexium(dependency, '1.0.5')
+        self.add_hexium(dependency, '1.0.10')
+        self.add_thunderstore('Author-World', deps=[dependency + '-1.0.5'])
+        self.manager.install('Author-World', scope='client')
+        package = self.package(dependency)
+        self.assertEqual((package['source'], package['version'], package['scope']), ('hexium', '1.0.5', 'client'))
+        self.assertEqual(self.package('Author-World')['source'], 'thunderstore')
+        old_zip = 'https://thunderstore.io/package/download/shudnal/ConditionalConfigSync/1.0.5/'
+        self.assertFalse(any(call.args[0] == old_zip for call in self.fetch_mock.call_args_list))
+
+    def test_hexium_outage_preserves_valid_thunderstore_but_not_explicit_hexium(self):
+        self.add_thunderstore('Author-World', deprecated=True)
+        with patch('mods._hexium_index', side_effect=ValueError('Hexium unavailable')):
+            self.manager.install('Author-World-1.0.0')
+            self.assertEqual(self.package('Author-World')['source'], 'thunderstore')
+            before = self.manager.view()
+            manifest = self.manager.manifest.read_bytes()
+            with self.assertRaisesRegex(ValueError, 'Hexium unavailable'):
+                self.manager.install('https://valheim.hexium.gg/mods/Author/World/1.0.0')
+        self.assertEqual(self.manager.view(), before)
+        self.assertEqual(self.manager.manifest.read_bytes(), manifest)
+
+    def test_missing_dependency_minimum_can_use_newer_hexium_release_but_root_pin_is_exact(self):
+        self.add_hexium('Author-Library', '2.0.0')
+        self.add_thunderstore('Author-World', deps=['Author-Library-1.0.0'])
+        self.manager.install('Author-World', scope='both')
+        package = self.package('Author-Library')
+        self.assertEqual((package['source'], package['version'], package['scope']), ('hexium', '2.0.0', 'both'))
+        before = self.manager.view()
+        manifest = self.manager.manifest.read_bytes()
+        with self.assertRaises(ValueError):
+            self.manager.install('https://valheim.hexium.gg/mods/Author/Library/1.0.0')
+        self.assertEqual(self.manager.view(), before)
+        self.assertEqual(self.manager.manifest.read_bytes(), manifest)
 
     def test_hexium_link_and_hexium_only_dependency(self):
         self.add_hexium('Smoothbrain-ServerSync', '2.0.0')
