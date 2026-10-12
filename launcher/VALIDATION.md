@@ -1,6 +1,6 @@
 # Hearth Launcher 1.0.0 — validation
 
-Implementation branch: `feat/hearth-launcher`, based on Hearth panel 1.7.0.
+Included in Hearth panel 1.8.0. The launcher has its own version, 1.0.0.
 
 ## Completed
 
@@ -16,10 +16,14 @@ Implementation branch: `feat/hearth-launcher`, based on Hearth panel 1.7.0.
 
 Coverage includes intact-collection no-ops, verified archive caching, corrupt-cache repair, exact V+ packages plus overlay, generic BepInEx collections, vanilla launch plans, server changes before installation/launch, bad hashes and ZIP paths, unmanaged collisions, known V+ conflicts added after synchronization, interrupted transactions, rollback with complete inventory, private configurations and foreign plugins.
 
-## Remaining in-game validation
+## Maintainer acceptance
+
+On 2026-10-12, the project maintainer confirmed that the current launcher had been tested and approved merging and publishing the release. This is maintainer-reported acceptance; the automated checks above did not start Steam, Proton or Valheim.
+
+## Manual regression scenarios
 
 1. Windows: detect a real Steam library, install a server collection, launch Steam/Valheim and verify the connection handoff after character selection.
 2. Linux desktop / Steam Proton, including Flatpak: configure `WINEDLLOVERRIDES`, repeat synchronization and launch, confirm BepInEx loads and the server accepts the client.
 3. Switch between plus, modded and vanilla profiles; verify Doorstop 3/4 vanilla flags in the actual game and restore the prior collection.
 
-These steps have not been claimed as passed. The launcher never launches plugin DLLs during validation. Game updates remain Steam's responsibility; the local game version is reported as unknown. Profiles sharing one game folder share configurations. Downloads cache whole verified archives, not individual mod deltas. The first Windows build is unsigned.
+The launcher never launches plugin DLLs during automated validation. Game updates remain Steam's responsibility; the local game version is reported as unknown. Profiles sharing one game folder share configurations. Downloads cache whole verified archives, not individual mod deltas. The first Windows build is unsigned.
