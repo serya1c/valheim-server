@@ -1,4 +1,6 @@
 window.HEARTH_EN = {
+  "Выключить звук": "Mute sound",
+  "Включить звук": "Enable sound",
   "Лаунчер скоро появится": "The launcher is coming soon",
   "Администратор ещё не опубликовал лаунчер. Пока можно подключиться вручную по адресу ниже, подготовив нужные серверу моды.": "The administrator has not published the launcher yet. For now, prepare any mods required by the server and connect manually using the address below.",
   "Установщики пока недоступны. Открой «Версии без установки» ниже: Windows EXE запускается сразу, а Linux TAR.GZ нужно распаковать и запустить Hearth-Launcher. Выбери сервер и папку игры; проверка выполняется автоматически, моды устанавливаются при нажатии «Играть».": "Installers are not available yet. Open Portable versions below: run the Windows EXE directly, or extract the Linux TAR.GZ and run Hearth-Launcher. Choose a server and game directory; checking happens automatically and Play installs mods.",

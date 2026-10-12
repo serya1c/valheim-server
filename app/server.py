@@ -1010,6 +1010,73 @@ class Handler(BaseHTTPRequestHandler):
             s = self.sessions.get(token)
             return s if s and s['expires'] > time.time() else None
 
+    def landing_music(self, head=False):
+        # Fixed public asset; requests never select a filesystem path.
+        path = Path(__file__).parent / 'static/audio/home-a-place-to-enjoy.mp3'
+        try:
+            source = path.open('rb')
+        except FileNotFoundError:
+            self.send_response(404)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+        with source:
+            size = os.fstat(source.fileno()).st_size
+            start, end, partial = 0, size - 1, False
+            field = '' if head or self.headers.get('If-Range') else self.headers.get('Range', '').strip()
+            match = re.fullmatch(r'bytes=([0-9]*)-([0-9]*)', field) if len(field) <= 96 else None
+            if match and any(match.groups()) and all(len(value) <= 20 for value in match.groups()):
+                first, last = match.groups()
+                if not first:
+                    length = int(last)
+                    start = max(0, size - length) if length else size
+                    partial = True
+                elif not last or int(last) >= int(first):
+                    start = int(first)
+                    end = min(int(last), end) if last else end
+                    partial = True
+                # Invalid or multipart ranges are ignored; clients get the complete asset.
+            if partial and start >= size:
+                self.send_response(416)
+                self.send_header('Content-Range', f'bytes */{size}')
+                self.send_header('Content-Length', '0')
+                self.send_header('Accept-Ranges', 'bytes')
+                self.end_headers()
+                return
+            length = max(0, end - start + 1)
+            self.send_response(206 if partial else 200)
+            self.send_header('Content-Type', 'audio/mpeg')
+            self.send_header('Content-Length', str(length))
+            self.send_header('Accept-Ranges', 'bytes')
+            self.send_header('Cache-Control', 'public, max-age=86400')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            if partial:
+                self.send_header('Content-Range', f'bytes {start}-{end}/{size}')
+            self.end_headers()
+            if head:
+                return
+            source.seek(start)
+            try:
+                while length:
+                    chunk = source.read(min(length, 64 * 1024))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    length -= len(chunk)
+            except (BrokenPipeError, ConnectionResetError):
+                pass  # Closing the player normally cancels an in-flight media request.
+
+    def do_HEAD(self):
+        self.path = urlsplit(self.path).path
+        if self.path != '/audio/home-a-place-to-enjoy.mp3':
+            return self.send_error(501, "Unsupported method ('HEAD')")
+        if not self.manager.panel.configured:
+            self.send_response(409)
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+        return self.landing_music(head=True)
+
     def do_GET(self):
         query = parse_qs(urlsplit(self.path).query)
         self.path = urlsplit(self.path).path
@@ -1027,6 +1094,8 @@ class Handler(BaseHTTPRequestHandler):
                 name, mime = setup_assets[self.path]
                 return self.reply(200, (Path(__file__).parent / 'static' / name).read_bytes(), mime+'; charset=utf-8')
             return self.reply(409, {'error':'Сначала завершите первоначальную настройку'})
+        if self.path == '/audio/home-a-place-to-enjoy.mp3':
+            return self.landing_music()
         if self.path == '/api/setup' or self.path == '/setup':
             return self.reply(409, {'error':'Первичная настройка уже завершена; войдите в /admin'})
         if self.path == '/downloads/Hearth-Client-Mods.zip':
@@ -1087,6 +1156,7 @@ class Handler(BaseHTTPRequestHandler):
                 'game':versions.get('game'), 'mod':versions.get('mod'),
                 'client_mods': self.manager.public_client_mods(), 'launcher': launcher_downloads()})
         assets = {'/': ('landing.html', 'text/html; charset=utf-8'), '/admin': ('index.html', 'text/html; charset=utf-8'), '/admin/': ('index.html', 'text/html; charset=utf-8'), '/landing.css': ('landing.css', 'text/css; charset=utf-8'), '/landing.js': ('landing.js', 'text/javascript; charset=utf-8'), '/north.svg': ('north.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/operations.js': ('operations.js', 'text/javascript; charset=utf-8'), '/players.js': ('players.js', 'text/javascript; charset=utf-8'), '/transfer.js': ('transfer.js', 'text/javascript; charset=utf-8'), '/settings.js': ('settings.js', 'text/javascript; charset=utf-8'), '/mod-ru.js': ('mod-ru.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
+        assets['/music.js'] = ('music.js', 'text/javascript; charset=utf-8')
         assets['/health.js'] = ('health.js', 'text/javascript; charset=utf-8')
         assets['/mods.js'] = ('mods.js', 'text/javascript; charset=utf-8')
         assets['/mods.css'] = ('mods.css', 'text/css; charset=utf-8')
