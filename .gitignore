@@ -10,3 +10,9 @@ installer/bin/
 installer/obj/
 installer-tests/bin/
 installer-tests/obj/
+launcher/bin/
+launcher/obj/
+launcher/.build/
+launcher/.packages/
+launcher/tests/bin/
+launcher/tests/obj/

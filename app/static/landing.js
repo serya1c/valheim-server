@@ -9,7 +9,20 @@ function renderMaintenance(){
  if(data.maintenance&&['pending','running'].includes(data.maintenance.state))setText('status-note',I18n.t(data.maintenance.state==='running'?'Сервер на обслуживании':'Запланировано обслуживание')+' · '+new Date(data.maintenance.at*1000).toLocaleString(I18n.locale)+(data.maintenance.wait_empty?' · '+I18n.t('Дождаться пустого сервера'):''));
 }
 function renderClientMods(){if(!lastPublic)return;const data=lastPublic;const bundle=data.client_mods;const bundleLink=el('client-mods-download');bundleLink.hidden=!bundle;bundleLink.href=bundle?bundle.url:'#';const note=el('client-mods-note');note.hidden=!bundle;note.dataset.i18nSkip='';note.textContent=bundle?I18n.t('Клиентский набор: ')+(bundle.packages.length?bundle.packages.map(p=>p.name+' '+p.version).join(', '):'BepInEx'):'';}
-window.addEventListener('hearth-language',()=>{renderDescription();renderMaintenance();renderClientMods();});
+function renderLauncher(){
+ if(!lastPublic)return;
+ const launcher=lastPublic.launcher, section=el('launcher-downloads');
+ let ready=false;
+ for(const [platform,name] of Object.entries({windows:'Hearth-Launcher.exe',linux:'Hearth-Launcher-Linux.tar.gz'})){
+  const asset=launcher?.[platform], link=el('launcher-'+platform), checksum=el('launcher-'+platform+'-checksum');
+  const valid=asset?.url==='/downloads/'+name&&asset.checksum_url==='/downloads/'+name+'.sha256'&&Number.isSafeInteger(asset.size)&&asset.size>0&&/^[a-f0-9]{64}$/i.test(asset.sha256||'');
+  link.hidden=checksum.hidden=!valid;
+  if(valid){link.href=asset.url;checksum.href=asset.checksum_url;ready=true;}
+  else{link.removeAttribute('href');checksum.removeAttribute('href');}
+ }
+ section.hidden=!ready;
+}
+window.addEventListener('hearth-language',()=>{renderDescription();renderMaintenance();renderClientMods();renderLauncher();});
 function setText(id,value){el(id).textContent=value;}
 async function refreshPublic(){
  if(pending)return;pending=true;
@@ -39,7 +52,7 @@ async function refreshPublic(){
   setText('connect-note',connectAddress?'Подключение в Valheim → Присоединиться → по IP.':'Администратор ещё не опубликовал адрес. Загляни чуть позже.');
   const community=el('community-link');
   if(data.community_url&&/^https?:\/\//i.test(data.community_url)){community.href=data.community_url;community.hidden=false;}else{community.hidden=true;community.removeAttribute('href');}
-  renderClientMods();
+  renderClientMods();renderLauncher();
   const mod=el('mod-download');
   if(data.mod&&/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(data.mod)){
    mod.href='https://github.com/Grantapher/ValheimPlus/releases/tag/'+encodeURIComponent(data.mod);mod.textContent='Скачать V+ '+data.mod+' ↗';
@@ -53,6 +66,11 @@ el('copy-address').addEventListener('click',async()=>{
  if(!connectAddress)return;
  try{await navigator.clipboard.writeText(connectAddress);setText('copy-feedback','Адрес скопирован. До встречи у очага!');}
  catch{setText('copy-feedback','Выдели адрес выше и скопируй вручную — браузер запретил копирование.');const range=document.createRange();range.selectNodeContents(el('connect-address'));const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);}
+});
+el('launcher-copy-site').addEventListener('click',async()=>{
+ const text=lastPublic?.site_url||'';
+ try{await navigator.clipboard.writeText(text);setText('launcher-copy-note','Адрес сайта скопирован. Добавьте его в лаунчер.');}
+ catch{setText('launcher-copy-note','Скопируйте адрес сайта вручную и добавьте его в лаунчер.');}
 });
 refreshPublic();setInterval(()=>{if(!document.hidden)refreshPublic();},30000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshPublic();});

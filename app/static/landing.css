@@ -8,3 +8,10 @@
 .steps a.installer-download.outline{color:var(--amber,#e1b276)}
 .faq-list pre{max-width:100%;overflow-x:auto;padding:14px;background:#101a1a;font-size:13px;color:#ead5b2}
 #proton-guide{scroll-margin-top:24px}
+.launcher-card{padding:28px;border:1px solid #687151;border-radius:14px;background:linear-gradient(135deg,#263b2c,#16251f);margin:24px 0 32px}
+.launcher-card h3{font:500 26px/1.3 Georgia,serif;color:#ead5b2;margin:8px 0 14px}
+.launcher-card p{max-width:850px;line-height:1.65}
+.launcher-card .launcher-actions{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:18px 0}
+.launcher-card .launcher-actions .button{white-space:normal;text-align:center}
+.launcher-card .launcher-checksums{display:flex;flex-wrap:wrap;gap:20px;font-size:12px}
+.launcher-card .launcher-site{overflow-wrap:anywhere}

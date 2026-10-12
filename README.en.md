@@ -4,7 +4,7 @@
 
 Hearth gives your Valheim server a home in the browser. Set up a world, invite friends, manage players, and keep backups from one panel, in English or Russian.
 
-Play vanilla, use Grantapher's Valheim Plus, or build your own BepInEx mod set from Thunderstore, Hexium, and ZIP archives. Players get a separate landing page with connection details and installers for the client mods they need.
+Play vanilla, use Grantapher's Valheim Plus, or build your own BepInEx mod set from Thunderstore, Hexium, and ZIP archives. Players get a separate landing page with connection details, client installers, and Hearth Launcher for Windows / Linux with Proton.
 
 [Quick start](#quick-start) · [Features and screenshots](#tour) · [Administration guide](docs/administration.en.md) · [Releases](https://github.com/serya1c/valheim-server/releases) · [Report a problem](https://github.com/serya1c/valheim-server/issues)
 
@@ -79,6 +79,16 @@ Hearth supports **BepInEx 5.4 plugins**; packages requiring separate patchers or
 ![Thunderstore, Hexium, ZIP, and the bundled Hearth Admin](docs/screenshots/mods-en.jpg)
 
 *Hearth 1.7.0 screenshot with a demo mod collection.*
+
+### A launcher for players
+
+Save your server website in **Hearth Launcher** and press **Play**. The launcher checks mod files, updates the collection with a backup when needed, and starts Valheim through Steam with the selected server address. Verified archives are cached, and an intact collection is not downloaded again. Server profiles, file restoration, and an instant RU / EN switch are included.
+
+Supported platforms are **Windows x64** and **Linux x64 / Steam Proton**, including Steam Flatpak. Steam updates the game; character selection and passwords remain in the game. Profiles using the same Valheim directory share its configurations. [First launch and limitations](docs/launcher.en.md).
+
+![Hearth Launcher: server profiles, collection checks, and game launch](docs/screenshots/launcher-en.jpg)
+
+*Hearth Launcher 1.0.0 with demonstration data; no game was started.*
 
 ### Manage players by SteamID
 

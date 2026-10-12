@@ -33,6 +33,7 @@ from player_access import PlayerAccess, LABELS as PLAYER_ACTION_NAMES, steam_id
 from health import HealthMonitor
 from mods import ModManager
 from game_admin import GameAdmin, builtin_info, BUNDLE
+from launcher_downloads import launcher_downloads
 
 BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
@@ -1047,7 +1048,9 @@ class Handler(BaseHTTPRequestHandler):
                 shutil.copyfileobj(source, self.wfile)
             return
         if self.path in {'/downloads/Loki-Mod-Installer.exe', '/downloads/Loki-Mod-Installer.exe.sha256',
-                         '/downloads/Loki-Mod-Installer-Linux.sh', '/downloads/Loki-Mod-Installer-Linux.sh.sha256'}:
+                         '/downloads/Loki-Mod-Installer-Linux.sh', '/downloads/Loki-Mod-Installer-Linux.sh.sha256',
+                         '/downloads/Hearth-Launcher.exe', '/downloads/Hearth-Launcher.exe.sha256',
+                         '/downloads/Hearth-Launcher-Linux.tar.gz', '/downloads/Hearth-Launcher-Linux.tar.gz.sha256'}:
             name = self.path.rsplit('/', 1)[1]
             path = Path(__file__).parent / 'downloads' / name
             if not path.is_file():
@@ -1083,7 +1086,7 @@ class Handler(BaseHTTPRequestHandler):
                 'players':online['count'] if fresh else None,
                 'maintenance':self.manager.operations.view()['maintenance'],
                 'game':versions.get('game'), 'mod':versions.get('mod'),
-                'client_mods': self.manager.public_client_mods()})
+                'client_mods': self.manager.public_client_mods(), 'launcher': launcher_downloads()})
         assets = {'/': ('landing.html', 'text/html; charset=utf-8'), '/admin': ('index.html', 'text/html; charset=utf-8'), '/admin/': ('index.html', 'text/html; charset=utf-8'), '/landing.css': ('landing.css', 'text/css; charset=utf-8'), '/landing.js': ('landing.js', 'text/javascript; charset=utf-8'), '/north.svg': ('north.svg', 'image/svg+xml'), '/app.js': ('app.js', 'text/javascript; charset=utf-8'), '/operations.js': ('operations.js', 'text/javascript; charset=utf-8'), '/players.js': ('players.js', 'text/javascript; charset=utf-8'), '/transfer.js': ('transfer.js', 'text/javascript; charset=utf-8'), '/settings.js': ('settings.js', 'text/javascript; charset=utf-8'), '/mod-ru.js': ('mod-ru.js', 'text/javascript; charset=utf-8'), '/style.css': ('style.css', 'text/css; charset=utf-8')}
         assets['/health.js'] = ('health.js', 'text/javascript; charset=utf-8')
         assets['/mods.js'] = ('mods.js', 'text/javascript; charset=utf-8')
@@ -1106,6 +1109,8 @@ class Handler(BaseHTTPRequestHandler):
                     'SERVER_ADDRESS':landing['address'] or 'Адрес скоро появится',
                     'LISTING_NAME':self.manager.config.advertised_name()}
                 template = (Path(__file__).parent / 'static' / name).read_text(encoding='utf-8-sig')
+                launcher_card = (Path(__file__).parent / 'static/launcher-card.html').read_text(encoding='utf-8')
+                template = template.replace('{{LAUNCHER_CARD}}', launcher_card)
                 body = re.sub(r'\{\{(SITE_TITLE|SITE_DESCRIPTION|SERVER_ADDRESS|LISTING_NAME|SITE_URL|MODE_LABEL|PLUS_HIDDEN|VANILLA_HIDDEN|MODDED_HIDDEN|MODS_HIDDEN|LISTING_HIDDEN)\}\}', lambda m: html.escape(values[m[1]], quote=True), template)
                 return self.reply(200, body.encode(), mime)
             return self.reply(200, (Path(__file__).parent / 'static' / name).read_bytes(), mime)
