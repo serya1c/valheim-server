@@ -45,38 +45,58 @@ public sealed class LauncherService : ILauncherService
         await gate.WaitAsync(cancellationToken);
         try
         {
-            string website = Website(profile), game = Game(profile);
+            string website = Website(profile);
             using var source = Source(website);
             var version = await source.Server(cancellationToken);
-            return await Task.Run(() => Report(profile, website, game, version), cancellationToken);
+            return await Task.Run(() =>
+            {
+                try
+                {
+                    string? game = string.IsNullOrWhiteSpace(profile.GamePath) ? null : Game(profile);
+                    return Report(profile, website, game, version, cancellationToken: cancellationToken);
+                }
+                catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException or UnauthorizedAccessException)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    return Report(profile, website, null, version, cancellationToken: cancellationToken) with
+                    { ClientState = ClientCollectionState.CheckFailed, ClientCheckError = error.Message, NeedsSync = true };
+                }
+            }, cancellationToken);
         }
         finally { gate.Release(); }
     }
 
-    static LauncherReport Report(LauncherProfile profile, string website, string game, ServerVersion version,
-        int? changes = null, int? total = null)
+    static LauncherReport Report(LauncherProfile profile, string website, string? game, ServerVersion version,
+        int? changes = null, int? total = null, CancellationToken cancellationToken = default)
     {
-        var inventory = Installer.LoadInventory(game);
+        cancellationToken.ThrowIfCancellationRequested();
         var notes = new List<string> { "Версия установленной игры не определена. Обновление Valheim выполняет Steam." };
         if (!version.Running) notes.Add("Сервер сейчас остановлен.");
         if (!OperatingSystem.IsWindows()) notes.Add("Для модов включите Proton и один раз задайте в Steam: WINEDLLOVERRIDES=\"winhttp=n,b\" %command%.");
         notes.Add("Профили используют общую папку игры и общие конфигурации модов.");
+        if (game is null)
+            return new(Snapshot(profile, website, version), 0, 0, version.Mode != "vanilla", null, notes)
+            { ClientState = ClientCollectionState.FolderRequired };
         if (version.Mode == "vanilla")
         {
             notes.Add("Ванильный режим не меняет файлы. Загрузчик модов отключается только для этого запуска.");
-            return new(Snapshot(profile, website, version), 0, 0, false, null, notes);
+            return new(Snapshot(profile, website, version), 0, 0, false, null, notes)
+            { ClientState = ClientCollectionState.NotRequired };
         }
         Installer.EnsureRecovered(game);
+        var inventory = Installer.LoadInventory(game);
         Installer.ValidateCompatibility(game, version.Mode, inventory);
-        int different = inventory is null ? 0 : Installer.DifferentFiles(game, inventory);
-        bool matches = Installer.InventoryMatches(game, website, version, inventory);
-        if (ForeignPlugins(game, inventory)) notes.Add("Найдены моды вне учёта лаунчера. Они сохраняются и могут влиять на совместимость.");
+        int different = inventory is null ? 0 : Installer.DifferentFiles(game, inventory, cancellationToken);
+        bool matches = inventory is not null && inventory.Website == website && inventory.Manifest == Installer.ManifestKey(version)
+            && inventory.Mode == version.Mode && different == 0;
+        if (ForeignPlugins(game, inventory, cancellationToken)) notes.Add("Найдены моды вне учёта лаунчера. Они сохраняются и могут влиять на совместимость.");
         if (!matches) notes.Add("Моды предоставлены выбранным сервером и выполняются на вашем компьютере.");
         return new(Snapshot(profile, website, version), changes ?? different, total ?? inventory?.Files.Count ?? 0,
-            !matches, null, notes);
+            !matches, null, notes)
+        { ClientState = inventory is null ? ClientCollectionState.InstallRequired : matches ? ClientCollectionState.Ready : ClientCollectionState.UpdateRequired };
     }
 
-    static bool ForeignPlugins(string game, InstallationInventory? inventory)
+    static bool ForeignPlugins(string game, InstallationInventory? inventory, CancellationToken cancellationToken = default)
     {
         string plugins = Installer.SafePath(game, "BepInEx/plugins");
         if (!Directory.Exists(plugins)) return false;
@@ -85,6 +105,7 @@ public sealed class LauncherService : ILauncherService
         {
             foreach (string path in Directory.EnumerateFileSystemEntries(folder))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 Installer.NoLinks(path);
                 if (Directory.Exists(path)) { if (Walk(path)) return true; }
                 else if (path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase)
@@ -110,15 +131,15 @@ public sealed class LauncherService : ILauncherService
         if (selected.Mode == "vanilla")
         {
             Write("Ванильный сервер: установка модов не требуется.");
-            return Report(profile, website, game, selected);
+            return Report(profile, website, game, selected, cancellationToken: cancellationToken);
         }
         Installer.EnsureRecovered(game);
         var inventory = Installer.LoadInventory(game);
         await Task.Run(() => Installer.ValidateCompatibility(game, selected.Mode, inventory), cancellationToken);
-        if (await Task.Run(() => Installer.InventoryMatches(game, website, selected, inventory), cancellationToken))
+        if (await Task.Run(() => Installer.InventoryMatches(game, website, selected, inventory, cancellationToken), cancellationToken))
         {
             Write("Все файлы модов проверены. Синхронизация не требуется.");
-            return Report(profile, website, game, selected, 0);
+            return Report(profile, website, game, selected, 0, cancellationToken: cancellationToken);
         }
         await Task.Run(() => { Installer.ValidateTarget(game, false); ensureGameClosed(); }, cancellationToken);
         string stages = Path.Combine(stateDirectory, "staging");

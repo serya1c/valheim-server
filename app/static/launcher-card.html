@@ -1,10 +1,13 @@
 <article id="launcher-downloads" class="launcher-card" hidden>
   <p class="eyebrow">HEARTH LAUNCHER</p>
-  <h3>Проверка модов перед каждой сагой</h3>
-  <p>Выбери сервер и нажми «Играть». Лаунчер проверит клиентскую сборку, обновит моды при необходимости и запустит Valheim через Steam. Профили серверов, восстановление файлов и переключатель RU / EN — в одном окне.</p>
-  <div class="launcher-actions"><a id="launcher-windows" class="button amber" hidden download>Лаунчер для Windows ↓</a><a id="launcher-linux" class="button outline" hidden download>Лаунчер для Linux / Proton ↓</a><button id="launcher-copy-site" class="button outline" type="button">Скопировать сайт для лаунчера</button></div>
+  <h3>Твой путь в мир — одним нажатием</h3>
+  <p data-launcher-install>Установи Hearth Launcher и открой его с рабочего стола. Выбери сервер и папку Valheim: состояние сервера и клиентская сборка проверяются автоматически. Нажми «Играть» — нужные моды обновятся с резервной копией, затем игра запустится через Steam. Для ванильного сервера моды не устанавливаются.</p>
+  <p data-launcher-portable-only hidden>Установщики пока недоступны. Открой «Версии без установки» ниже: Windows EXE запускается сразу, а Linux TAR.GZ нужно распаковать и запустить Hearth-Launcher. Выбери сервер и папку игры; проверка выполняется автоматически, моды устанавливаются при нажатии «Играть».</p>
+  <div class="launcher-actions"><a id="launcher-windows" class="button amber" hidden download>Установить лаунчер для Windows ↓</a><a id="launcher-linux" class="button outline" hidden download>Установить лаунчер для Linux / Proton ↓</a><button id="launcher-copy-site" class="button outline" type="button">Скопировать сайт для лаунчера</button></div>
   <p class="small launcher-site">Добавьте в лаунчер сайт сервера: <strong data-site-url data-i18n-skip>{{SITE_URL}}</strong></p>
   <p id="launcher-copy-note" class="small" role="status"></p>
-  <p class="small">Нужен Valheim в Steam. На Linux используется Windows-версия игры через Proton. Для модов один раз настройте параметры запуска Steam по инструкции в лаунчере.</p>
+  <p class="small" data-launcher-install>Установщик добавляет лаунчер и ярлык на рабочий стол. Установка для текущего пользователя, без прав администратора. Windows EXE пока без подписи издателя. Сам Valheim должен быть установлен в Steam.</p>
+  <p class="small">На Linux используется Windows-версия игры через Proton. Для модов один раз настройте параметры запуска Steam по инструкции ниже.</p>
   <div class="launcher-checksums"><a id="launcher-windows-checksum" hidden download>SHA-256 Windows</a><a id="launcher-linux-checksum" hidden download>SHA-256 Linux</a></div>
+  <details id="launcher-portables" hidden><summary>Версии без установки</summary><p class="small">Для запуска из собственной папки. Ярлык создаётся только установщиком.</p><div class="launcher-checksums"><a id="launcher-windows_portable" hidden download>Windows · EXE ↓</a><a id="launcher-linux_portable" hidden download>Linux · TAR.GZ ↓</a><a id="launcher-windows_portable-checksum" hidden download>SHA-256 Windows EXE</a><a id="launcher-linux_portable-checksum" hidden download>SHA-256 Linux TAR.GZ</a></div></details>
 </article>

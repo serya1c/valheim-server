@@ -16,3 +16,7 @@ launcher/.build/
 launcher/.packages/
 launcher/tests/bin/
 launcher/tests/obj/
+launcher/setup/bin/
+launcher/setup/obj/
+launcher/setup-tests/bin/
+launcher/setup-tests/obj/

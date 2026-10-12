@@ -6,8 +6,9 @@
     <Nullable>enable</Nullable>
     <AssemblyName>HearthLauncher</AssemblyName>
     <RootNamespace>HearthLauncher</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <ApplicationTitle>Hearth Launcher</ApplicationTitle>
+    <ApplicationIcon>Assets/hearth.ico</ApplicationIcon>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <NuGetAudit>true</NuGetAudit>
     <PublishTrimmed>false</PublishTrimmed>
@@ -21,7 +22,8 @@
     <PackageReference Include="Avalonia.Desktop" Version="[12.1.4]" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="[12.1.4]" />
     <PackageReference Include="Avalonia.Headless" Version="[12.1.4]" />
-    <Compile Remove="tests/**/*.cs" />
+    <Compile Remove="tests/**/*.cs;setup/**/*.cs;setup-tests/**/*.cs" />
     <Compile Remove=".packages/**/*.cs;.build/**/*.cs" />
+    <AvaloniaResource Include="Assets/hearth.png" />
   </ItemGroup>
 </Project>

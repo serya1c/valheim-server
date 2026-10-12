@@ -15,3 +15,5 @@
 .launcher-card .launcher-actions .button{white-space:normal;text-align:center}
 .launcher-card .launcher-checksums{display:flex;flex-wrap:wrap;gap:20px;font-size:12px}
 .launcher-card .launcher-site{overflow-wrap:anywhere}
+
+.launcher-card details{margin-top:18px}.launcher-card summary{cursor:pointer;color:#ead5b2}.launcher-card .launcher-checksums a{overflow-wrap:anywhere}

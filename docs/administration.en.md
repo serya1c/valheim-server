@@ -2,14 +2,14 @@
 
 [Project overview and quick start](../README.en.md) · [Русское руководство](administration.ru.md)
 
-Hearth runs a vanilla Valheim server, Grantapher's Valheim Plus, or a custom BepInEx mod collection. The browser interface covers setup, configuration, backups, world transfers, updates, moderation, and maintenance. Players get a public website with connection instructions and client installers.
+Hearth runs a vanilla Valheim server, Grantapher's Valheim Plus, or a custom BepInEx mod collection. The browser interface covers setup, configuration, backups, world transfers, updates, moderation, and maintenance. Players get a public website with connection instructions and the launcher installer.
 
 Use Docker Compose on Linux x86-64, or Docker Desktop with Linux containers. A practical starting allocation is 4 CPU cores, 8 GB RAM, and 30 GB of SSD space. Large worlds, backup archives, and the separate update test process require more memory and disk space.
 
 - [First launch and public access](#first-launch-and-public-access)
 - [Settings](#settings)
 - [Server modes and additional mods](#server-modes-and-additional-mods)
-- [Client installers](#client-installers)
+- [Hearth Launcher for players](#hearth-launcher-for-players)
 - [Worlds and backups](#worlds-and-backups)
 - [Players and statistics](#players-and-statistics)
 - [Server health](#server-health)
@@ -52,13 +52,13 @@ For access only through a proxy on the same host, change the Compose web port ma
 
 ### Website, server listing, and search engines
 
-The configured website URL supplies canonical and Open Graph metadata, `robots.txt`, `sitemap.xml`, links, and installer instructions. It is not inferred from the request's `Host` header. Use an HTTP(S) domain or IPv4 address with an optional port, without a path or query. The community link is optional. World descriptions are edited separately and are not overwritten when the server mode changes.
+The configured website URL supplies canonical and Open Graph metadata, `robots.txt`, `sitemap.xml`, links, and launcher instructions. It is not inferred from the request's `Host` header. Use an HTTP(S) domain or IPv4 address with an optional port, without a path or query. The community link is optional. World descriptions are edited separately and are not overwritten when the server mode changes.
 
 **Add website to the server listing name** appends the URL to the public game name on the next game start. URLs longer than 70 characters are omitted to stay within the name limit. Steam listing requires reachable UDP ports and Steam connectivity; a permanent place in search results cannot be guaranteed. When public listing is disabled, the website offers direct connection instructions. Crossplay is not enabled.
 
-The website follows the **installed** mode. Selecting a different mode for the next installation does not immediately change the instructions for the current release. Vanilla hides mod installers and explains how to join with an ordinary Steam client.
+The website follows the **installed** mode. Selecting a different mode for the next installation does not immediately change the instructions for the current release. Vanilla keeps the launcher available and explains that no mods are needed; players can also join using an ordinary Steam client.
 
-The public `/api/public` exposes the website title and descriptions, addresses, installed mode and versions, public-listing flag, game-process state, and a fresh player count when available. It also includes the current or pending maintenance task and client mod package metadata: download URL, SHA-256, size, revision, package names/versions, and package kind. Passwords, access settings, player names, journal, moderation records, and backup archives require administrator sign-in.
+The public `/api/public` exposes the website title and descriptions, addresses, installed mode and versions, public-listing flag, game-process state, and a fresh player count when available. It also includes the current or pending maintenance task and client mod package metadata: download URL, SHA-256, size, revision, package names/versions, and package kind. Launcher metadata includes its version and available `windows` / `linux` installers and `windows_portable` / `linux_portable` downloads, with URLs, sizes, and SHA-256. Passwords, access settings, player names, journal, moderation records, and backup archives require administrator sign-in.
 
 The admin page and API responses carry `noindex`. To request indexing of the public site, submit `/sitemap.xml` to Google Search Console or Yandex Webmaster. Search engines determine whether and when to index it and where it ranks.
 
@@ -102,7 +102,7 @@ Hearth downloads and validates a candidate separately, then stops the running ga
 
 Additional mods live in `/data/mods` and survive container recreation and game updates. New full backups include them. Restoring an older backup without `mods` preserves the current collection. A world export transfers the world, its rules, and V+ configuration; install extra plugins separately on the destination, or use a full backup with a suitable game release.
 
-Enabled client packages are published on the website with exact versions. The Windows and Linux/Proton installers download this collection from the selected server and verify SHA-256. For V+, the package supplements the matching official Windows client archive; for BepInEx mode, it includes the loader and plugins. Players should rerun the installer after the collection changes. Obsolete, unchanged files previously installed under `HearthMods` are removed with a backup; user-modified files are not removed automatically.
+Enabled client packages are published on the website with exact versions. The Windows and Linux/Proton launcher downloads this collection from the selected server and verify SHA-256. For V+, the package supplements the matching official Windows client archive; for BepInEx mode, it includes the loader and plugins. Players press Play after the collection changes. Obsolete, unchanged files previously installed under `HearthMods` are removed with a backup; user-modified files are not removed automatically.
 
 The public ZIP excludes server configuration, mod configuration files, worlds, passwords, and player access lists. Mods create client settings when the game starts. Install packages you trust: plugins execute inside the game process.
 
@@ -127,49 +127,42 @@ During installation and updates, Hearth checks ordinary dependency minimums for 
 
 Archive validation restricts where files can be installed; it does not prove a DLL is safe or compatible with gameplay. Check the author's requirements for clients, game versions, and other mods.
 
-## Client installers
+<a id="client-installers"></a>
+## Hearth Launcher for players
 
-### Windows
+The landing page offers a **Hearth Launcher installer** for Windows x64 and Linux x64 / Steam Proton. It includes the launcher, installs it for the current user without administrator rights, and creates desktop and application-menu shortcuts with an icon. The Windows EXE is currently unsigned. [Player instructions](launcher.en.md).
 
-On Windows 10/11 x64, download `Loki-Mod-Installer.exe` from the server website. Enter its HTTPS URL, check the reported versions, and select the detected Steam game directory or browse to it manually. Close Valheim before installation. The executable is self-contained and currently has no publisher signature.
+- **Windows 10/11 x64:** run `Hearth-Launcher-Setup.exe`.
+- **Linux x64:** run `bash Hearth-Launcher-Install-Linux.sh` as your own user, without `sudo`. Regular Steam and Steam Flatpak are supported.
+- **Portable use:** additional `Hearth-Launcher.exe` and `Hearth-Launcher-Linux.tar.gz` downloads; create your own shortcuts.
 
-### Linux with Steam Proton
+Players save your HTTPS server website and their Valheim directory. Opening the launcher, selecting a profile, or choosing the game directory automatically refreshes the server versions and status and checks client collection files. Checking does not modify game files. **Play** backs up changes, installs or repairs the required mods, and starts Valheim through Steam with the connection address.
 
-Use Linux x86-64 and Python 3.9 or newer. In Steam, enable Proton for Valheim and wait for Steam to download the Windows game build. Close the game, then run:
+### Linux and Proton
 
-```bash
-bash Loki-Mod-Installer-Linux.sh --server https://your-server.example
-```
-
-Run as your own user, without `sudo`. Both regular Steam and Steam Flatpak installations are supported. Add this to the game's Steam launch options:
+Enable Proton for Valheim once in Steam and wait for the Windows game build to download. For modded servers, add this to the game's launch options:
 
 ```text
 WINEDLLOVERRIDES="winhttp=n,b" %command%
 ```
 
-Keep existing options and include `%command%` only once. If `WINEDLLOVERRIDES` is already present, append `winhttp=n,b` to its value using `;`. The installer does not edit Steam settings.
-
-To undo the last installation:
-
-```bash
-bash Loki-Mod-Installer-Linux.sh --restore
-```
-
-If restoration removes BepInEx, remove the added `winhttp` override from the launch options.
+Keep existing options and include `%command%` only once. If `WINEDLLOVERRIDES` already exists, append `winhttp=n,b` using `;`. The launcher explains and copies this option, but does not rewrite Steam settings.
 
 ### Version checks and client packages
 
-Both installers read the actual installed versions from the selected server's `/api/public`. In V+ mode they download the matching official `WindowsClient.zip` and any additional client overlay. In BepInEx mode they download the server's full loader-and-plugin package. They verify SHA-256 and archive paths, and back up replaced files.
+The launcher reads the actual installed versions and published collection from the selected server's `/api/public`:
 
-The website must use HTTPS on port 443. API and client-package redirects cannot move to another origin. An unavailable API, vanilla mode, or a version/collection change during download cancels installation; the installers do not fall back to an unrelated latest version. Steam updates the game itself. To play vanilla after using mods, use a clean installation or a separate profile without BepInEx and mods.
+- **Valheim Plus:** the official matching Grantapher `WindowsClient.zip`, plus additional client mods from an `overlay` ZIP.
+- **BepInEx:** a `full` ZIP containing the Windows loader and enabled client plugins. Proton uses the same runtime.
+- **Vanilla:** no mods are downloaded or installed. Supported Doorstop 3/4 loaders are disabled for that launch without deleting their files.
 
-## Hearth Launcher for players
+The profile website requires HTTPS on port 443. API and client-package redirects cannot move to another origin. The launcher verifies SHA-256 and archive paths and backs up replaced files. An unavailable API or a version/collection change during download cancels installation. It does not choose an unrelated latest mod instead of the server version. Steam updates the game; the local game version is still not detected. Character selection and passwords remain in the game.
 
-The landing page offers **Hearth Launcher** for Windows x64 and Linux x64 / Steam Proton. Players save your HTTPS server website and their Valheim folder, then press **Play**. The launcher checks the client collection, updates mods with a backup when needed, and sends the connection address to Steam. Linux requires a one-time Proton configuration in Steam. [Player instructions](launcher.en.md).
+After you change the collection, players press **Play** again. Profiles sharing one Valheim directory share configurations. Existing CFG files are preserved; server configurations are not distributed in the client ZIP. **Restore backup** can undo the launcher's latest installation. Earlier Loki installer backups are stored separately.
 
-Downloads appear when the panel image includes ready assets in `app/downloads/`: `Hearth-Launcher.exe`, `Hearth-Launcher-Linux.tar.gz`, their `.sha256` files, and `Hearth-Launcher.version`. The public `/api/public` response advertises links, sizes, and SHA-256 only for available files. The website and game address come from the landing settings; players can save multiple server profiles. Publisher signing is not included yet.
+### Landing downloads
 
-After you change the collection, launcher users can press Play again. Profiles sharing one Valheim folder also share configurations. Steam updates the game; passwords and character selection stay in the game. For vanilla launches, supported Doorstop loaders are disabled for that launch without deleting mods.
+The panel image must include `Hearth-Launcher-Setup.exe`, `Hearth-Launcher-Install-Linux.sh`, their `.sha256` files, and `Hearth-Launcher.version` under `app/downloads/`. Portable files and checksums are advertised separately. `/api/public` publishes links, sizes, and SHA-256 only for available valid files; unavailable downloads are hidden. The launcher is not tied to Loki: website and game addresses come from server settings, and players can save several profiles.
 
 ## Worlds and backups
 
@@ -241,7 +234,7 @@ SteamID lists and actions require panel sign-in and are not published on the web
 <a id="hearth-admin"></a>
 ### Hearth Admin: browser tools and the F8 menu
 
-Under **Mods**, install the bundled **Hearth Admin (ValheimAdminRu)**. It uses the existing backup and restart workflow and installs on both the server and the client collection. Players must rerun the website installer and restart Valheim after the collection changes. If it was installed manually before, back up and remove the old DLL on both the server and every client first. Client installers do not automatically remove manual copies; leaving one creates a duplicate plugin.
+Under **Mods**, install the bundled **Hearth Admin (ValheimAdminRu)**. It uses the existing backup and restart workflow and installs on both the server and the client collection. Players close Valheim and press Play in the launcher after the collection changes. If it was installed manually before, back up and remove the old DLL on both the server and every client first. The launcher does not automatically remove manual copies; leaving one creates a duplicate plugin.
 
 The mod requires BepInEx 5.4 or Valheim Plus. It is unavailable in vanilla mode. Server and clients must use matching mod versions. The mod targets Valheim **1.0.16 and 1.0.17**; DLL 0.4.0 was built against 1.0.17 libraries. The project maintainer confirmed in-game testing before Hearth 1.6.0. After changing the game version or mod collection, try the actions on a world copy first.
 
@@ -345,7 +338,7 @@ The panel cannot change published Docker ports. For a third instance or a custom
 
 **RU / EN** is available on the website, sign-in page, panel, and setup wizard. Switching is immediate, without reloading or clearing drafts, selected files, or open dialogs. The preference is stored in the browser, shared by pages at the same origin, and synchronized between tabs. A first visit uses Russian for a Russian-language browser and English otherwise. Without browser storage, switching still works for the current page session.
 
-Server, world, and player names, addresses, commands, CFG values, and raw console output are not translated. The English V+ editor uses English labels and the author's original descriptions, with translated value constraints. **Settings → Website** has separate Russian and English world descriptions; if the English field is empty, the Russian text is displayed. Custom text is not automatically translated. Panel dates follow the selected language. This switch does not change installer language.
+Server, world, and player names, addresses, commands, CFG values, and raw console output are not translated. The English V+ editor uses English labels and the author's original descriptions, with translated value constraints. **Settings → Website** has separate Russian and English world descriptions; if the English field is empty, the Russian text is displayed. Custom text is not automatically translated. Panel dates follow the selected language. The launcher language is selected separately in its window.
 
 ## Troubleshooting
 
@@ -409,6 +402,6 @@ node --check app/static/landing.js
 node tests/test_i18n.cjs
 ```
 
-Build the Windows installer from PowerShell with `./installer/build.ps1`, and the Linux installer with `python installer-linux/build.py`. Published installers and their SHA-256 files are under `app/downloads/`. The game-server version and Hearth panel version are independent.
+Build the earlier Windows mod installer (for compatibility) from PowerShell with `./installer/build.ps1`, and the earlier Linux mod installer with `python installer-linux/build.py`. Current launcher and setup build instructions are in [launcher/README.md](../launcher/README.md). Published downloads and their SHA-256 files are under `app/downloads/`. The game-server version and Hearth panel version are independent.
 
 Source directories: [panel](../app/), [Windows installer](../installer/), [Linux installer](../installer-linux/), [launcher and build instructions](../launcher/README.md), and [tests](../tests/). Run development checks from the repository root with application dependencies installed; they are not required for ordinary server operation.

@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
+    <AssemblyName>Hearth-Launcher-Setup</AssemblyName><Version>1.1.0</Version>
+    <ApplicationIcon>../Assets/hearth.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <DebugType>none</DebugType><DebugSymbols>false</DebugSymbols>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../.build/setup-payload.zip" LogicalName="HearthLauncherSetup.Payload.zip" />
+    <EmbeddedResource Include="../.build/setup-payload.sha256" LogicalName="HearthLauncherSetup.Payload.sha256" />
+    <EmbeddedResource Include="../Assets/hearth.ico" LogicalName="HearthLauncherSetup.Icon.ico" />
+    <EmbeddedResource Include="uninstall.ps1" LogicalName="HearthLauncherSetup.Uninstall.ps1" />
+  </ItemGroup>
+</Project>

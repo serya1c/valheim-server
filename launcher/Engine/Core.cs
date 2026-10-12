@@ -150,7 +150,14 @@ public sealed class SourceClient : IDisposable
 public static class Installer
 {
     public static bool IsGame(string path)=>File.Exists(Path.Combine(path,"valheim.exe"))&&Directory.Exists(Path.Combine(path,"valheim_Data"));
-    public static string Hash(string path){using var file=File.OpenRead(path);return Convert.ToHexString(SHA256.HashData(file));}
+    public static string Hash(string path,CancellationToken cancellationToken=default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();using var file=File.OpenRead(path);
+        if(!cancellationToken.CanBeCanceled)return Convert.ToHexString(SHA256.HashData(file));
+        using var hash=IncrementalHash.CreateHash(HashAlgorithmName.SHA256);byte[] buffer=new byte[65536];int count;
+        while((count=file.Read(buffer))>0){cancellationToken.ThrowIfCancellationRequested();hash.AppendData(buffer,0,count);}
+        cancellationToken.ThrowIfCancellationRequested();return Convert.ToHexString(hash.GetHashAndReset());
+    }
     public static string Root(string path)=>Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
     public static void NoLinks(string path)
     {
@@ -319,18 +326,19 @@ public static class Installer
     static bool IsHash(string? value)=>value is not null&&Regex.IsMatch(value,@"\A[a-fA-F0-9]{64}\z");
     static bool PathEqual(string first,string second)=>first.Equals(second,OperatingSystem.IsWindows()?StringComparison.OrdinalIgnoreCase:StringComparison.Ordinal);
     public static bool Mutable(string path)=>path.StartsWith("BepInEx/config/",StringComparison.OrdinalIgnoreCase);
-    public static int DifferentFiles(string game,InstallationInventory inventory)
+    public static int DifferentFiles(string game,InstallationInventory inventory,CancellationToken cancellationToken=default)
     {
         ValidateInventory(game,inventory);int changed=0;
         foreach(var entry in inventory.Files)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             string target=SafePath(game,entry.Path);
-            if(!File.Exists(target)||!Mutable(entry.Path)&&Hash(target)!=entry.Sha256)changed++;
+            if(!File.Exists(target)||!Mutable(entry.Path)&&Hash(target,cancellationToken)!=entry.Sha256)changed++;
         }
         return changed;
     }
-    public static bool InventoryMatches(string game,string website,ServerVersion version,InstallationInventory? inventory)
-        =>inventory is not null&&inventory.Website==website&&inventory.Manifest==ManifestKey(version)&&DifferentFiles(game,inventory)==0;
+    public static bool InventoryMatches(string game,string website,ServerVersion version,InstallationInventory? inventory,CancellationToken cancellationToken=default)
+        =>inventory is not null&&inventory.Website==website&&inventory.Mode==version.Mode&&inventory.Manifest==ManifestKey(version)&&DifferentFiles(game,inventory,cancellationToken)==0;
 
     public static InstallationResult Apply(string game,string stage,List<string> files,InstallationInventory desired,Action<string> log,
         Action? ensureClosed=null,Action<int>? beforeCopy=null)

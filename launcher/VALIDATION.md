@@ -1,4 +1,19 @@
-# Hearth Launcher 1.0.0 — validation
+# Hearth Launcher — validation
+
+## Version 1.1.0: automatic checks and installation
+
+- Read-only startup, profile/website and Steam/manual-folder inspection. Server metadata remains visible if the client folder or inventory has an error; no folder, setup, update/repair, ready, vanilla and failed states are distinct. Inspections read actual managed-file SHA-256 values, preserve user configurations, do not download archives or change game files, and support cancellation.
+- GUI checks verify automatic startup/folder selection, editable-site debounce, late replies after selection changes, failure clearing readiness, language switching and inspection cancellation before file operations. Real RU/EN previews use labelled demonstration data.
+- Windows platform/service fixtures pass: 90 platform + 60 service checks. The new inspection scenarios use fake HTTP responses and disposable game directories; they do not run Steam, Proton or Valheim.
+- Locked Release builds and self-contained Windows/Linux 1.1.0 artifacts pass. The launcher executable, Windows setup, Linux embedded installer and portable archive match their SHA-256 sidecars. The EXE and application resources contain the new Hearth icon; the portable Linux archive preserves executable mode 0755.
+- Windows setup: 15 disposable-directory installation checks and 6 real WScript.Shell shortcut checks pass. Desktop/menu target and icon, foreign-shortcut rejection and rollback are exercised in test directories with application registration disabled. Both real installer language previews were rendered and visually inspected. No actual desktop, installed-app registration, Steam or game files are changed.
+- Linux setup: real offline installation as UID 1000 in an Ubuntu runtime-dependencies container with network disabled. Desktop/menu entries and icon, standalone GUI smoke, reinstall, uninstall with profiles preserved, corrupt-payload cleanup and immediate retry, and foreign-shortcut rejection pass. The container has no .NET executable/SDK, Steam or Valheim.
+- Linux service fixtures: 90 platform + 63 service checks pass offline, including three Linux path-alias cases. Python metadata/downloads, the actual four HTTP payloads/checksums, approved public API fields, localization, landing routes and backwards-compatible downloads pass. Six documentation files, 101 local links/anchors and 22 screenshot references are verified; launcher screenshots are updated to 1.1.0.
+- The temporary landing was checked in Russian and English for setup/portable links, Proton instructions, reversible language switching and website-copy feedback. It never starts a game server or changes production settings.
+
+Version 1.0.0 acceptance below applies to the previously published launcher. New installer/desktop integration and the 1.1.0 changes still need a maintainer check on actual desktop sessions.
+
+## Previous version 1.0.0
 
 Included in Hearth panel 1.8.0. The launcher has its own version, 1.0.0.
 

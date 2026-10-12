@@ -7,12 +7,20 @@ The launcher saves your servers, checks installed mods, and starts Valheim throu
 ## First launch
 
 1. Install Valheim in Steam. On Linux, use the **Windows game through Proton**.
-2. Download the launcher from your server's landing page. On Windows, open `Hearth-Launcher.exe`. On Linux, extract `Hearth-Launcher-Linux.tar.gz` and run `Hearth-Launcher` from the extracted directory.
+2. Download the **launcher installer** from your server's landing page. On Windows, open `Hearth-Launcher-Setup.exe`. On Linux, run `bash Hearth-Launcher-Install-Linux.sh` as your own user, without `sudo`. The installer includes the launcher, installs it for the current user, and creates desktop and application-menu shortcuts. Then open **Hearth Launcher**.
 3. Select Valheim in **Found in Steam**. **Detect** repeats the search; **Browse…** lets you add a directory manually. The directory must contain `valheim.exe` and `valheim_Data`.
 4. Add the **HTTPS address of your Hearth website**, such as `https://loki.ach-play.ru`, and save the profile. Use the website root without an extra path, on the standard HTTPS port 443.
 5. Close Valheim and press **Play**. The launcher automatically checks and, if needed, installs or updates the mods, then starts the game through Steam.
 
 Published builds include .NET and the launcher interface; no separate SDK, Python, or .NET installation is required. Windows x64 and desktop Linux x64 with Steam or Steam Flatpak are supported. Linux needs its normal desktop graphics libraries; Wayland uses XWayland.
+
+The installer does not need administrator rights. The Windows EXE is currently unsigned. `Hearth-Launcher.exe` and `Hearth-Launcher-Linux.tar.gz` are also available for portable use; create shortcuts yourself in that case. Some Linux desktops require choosing **Allow launching** before opening a desktop shortcut for the first time.
+
+## Automatic checks
+
+Opening the launcher with a saved profile, selecting a server, or choosing the game directory automatically refreshes the cards on the right. The launcher reads the server status and versions and checks managed client collection files. The check compares the local inventory and managed file hashes; it does not download mod archives or modify game files. A new directory without a launcher-managed collection is marked as needing installation. **Play** repairs a damaged or outdated collection. The check does not start Steam or Valheim.
+
+If the website is unavailable or no directory has been chosen yet, the interface explains what needs to be configured. The local game version is still not detected; Steam updates the game.
 
 ## Linux and Proton
 
