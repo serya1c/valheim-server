@@ -1,4 +1,5 @@
 # Embedded executable: preserve the exact installer bytes and its SHA-256.
+app/downloads/* linguist-generated=true
 app/downloads/Hearth-Launcher-Install-Linux.sh -text -diff
 # Shell source stays runnable after a Windows checkout.
 launcher/build.sh text eol=lf
