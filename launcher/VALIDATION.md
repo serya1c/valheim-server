@@ -11,7 +11,7 @@
 - Linux service fixtures: 90 platform + 63 service checks pass offline, including three Linux path-alias cases. Python metadata/downloads, the actual four HTTP payloads/checksums, approved public API fields, localization, landing routes and backwards-compatible downloads pass. Six documentation files, 101 local links/anchors and 22 screenshot references are verified; launcher screenshots are updated to 1.1.0.
 - The temporary landing was checked in Russian and English for setup/portable links, Proton instructions, reversible language switching and website-copy feedback. It never starts a game server or changes production settings.
 
-Version 1.0.0 acceptance below applies to the previously published launcher. New installer/desktop integration and the 1.1.0 changes still need a maintainer check on actual desktop sessions.
+On 2026-10-12, the maintainer merged PR #18, confirmed checking the appearance, and authorized publishing Hearth 1.9.0 with Launcher 1.1.0. This is maintainer-reported visual acceptance and release approval; no additional claim about real Steam/Proton/game execution is inferred. The installer binaries and their verified hashes are preserved without rebuilding. Version 1.0.0 acceptance below applies to the previous release.
 
 ## Previous version 1.0.0
 
