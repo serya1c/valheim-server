@@ -52,7 +52,7 @@
     const list=$('mods-packages');list.replaceChildren();
     if(!value.packages?.length){
       const empty=document.createElement('article');empty.className='card mods-empty';
-      empty.append(text('h3','Соберите свой набор модов'),text('p','Добавьте пакет из Thunderstore или загрузите ZIP. Выбранные моды и их зависимости появятся здесь.'));list.append(empty);
+      empty.append(text('h3','Соберите свой набор модов'),text('p','Добавьте пакет из Thunderstore или Hexium либо загрузите ZIP. Выбранные моды и их зависимости появятся здесь.'));list.append(empty);
     }
     for(const pkg of value.packages||[]){
       const card=document.createElement('article');card.className='card mods-package';
@@ -63,7 +63,7 @@
       const details=document.createElement('dl');details.className='mods-package-details';
       detail(details,'Версия',pkg.version||'—',true);
       detail(details,'Область установки',scopes[pkg.scope]||pkg.scope,!Object.hasOwn(scopes,pkg.scope));
-      detail(details,'Источник',pkg.source==='builtin'?'Встроен в Hearth':pkg.source==='manual'?'ZIP вручную':pkg.source==='thunderstore'?'Thunderstore':pkg.source||'—',!['manual','thunderstore','builtin'].includes(pkg.source));
+      detail(details,'Источник',pkg.source==='builtin'?'Встроен в Hearth':pkg.source==='manual'?'ZIP вручную':pkg.source==='thunderstore'?'Thunderstore':pkg.source==='hexium'?'Hexium':pkg.source||'—',!['manual','thunderstore','hexium','builtin'].includes(pkg.source));
       const dependencies=(pkg.dependencies||[]).map(item=>typeof item==='string'?item:item.id||item.name||'—');
       detail(details,'Зависимости',dependencies.length?dependencies.join(', '):'Нет зависимостей',Boolean(dependencies.length));card.append(details);
       const actions=document.createElement('div');actions.className='toolbar mods-package-actions';
@@ -71,7 +71,7 @@
       if(pkg.source_url){
         try{
           const source=new URL(pkg.source_url);
-          if(source.protocol==='https:'&&['thunderstore.io','www.thunderstore.io'].includes(source.hostname)){
+          if(source.protocol==='https:'&&['thunderstore.io','www.thunderstore.io','valheim.hexium.gg'].includes(source.hostname)){
             const link=text('a','Описание мода ↗');link.href=source.href;link.target='_blank';link.rel='noopener noreferrer';actions.append(link);
           }
         }catch{}
@@ -126,7 +126,7 @@
   }
   $('mods-source-form').onsubmit=event=>{
     event.preventDefault();const source=$('mods-source').value.trim();
-    if(!source){$('mods-message').textContent='Укажите пакет Thunderstore или ссылку на него';return;}
+    if(!source){$('mods-message').textContent='Укажите пакет Thunderstore / Hexium или ссылку на него';return;}
     void change('mod_install',{source,scope:$('mods-scope').value},source);
   };
   $('mods-upload-form').onsubmit=async event=>{
