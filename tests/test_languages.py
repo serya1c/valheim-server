@@ -18,7 +18,7 @@ class LanguageTests(unittest.TestCase):
             def handle_starttag(self,tag,attrs):
                 for key,value in attrs:
                     if key in ('title','placeholder','aria-label') and value and re.search('[А-Яа-яЁё]',value) and value not in catalog:missing.append(value)
-        for name in ('index.html','setup.html','landing.html'):
+        for name in ('index.html','setup.html','landing.html','launcher-card.html'):
             Parser().feed((ROOT/'app/static'/name).read_text(encoding='utf-8-sig'))
         self.assertEqual(missing,[])
         self.assertTrue(all(isinstance(v,str) and v for v in catalog.values()))

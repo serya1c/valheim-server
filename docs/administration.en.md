@@ -163,6 +163,14 @@ Both installers read the actual installed versions from the selected server's `/
 
 The website must use HTTPS on port 443. API and client-package redirects cannot move to another origin. An unavailable API, vanilla mode, or a version/collection change during download cancels installation; the installers do not fall back to an unrelated latest version. Steam updates the game itself. To play vanilla after using mods, use a clean installation or a separate profile without BepInEx and mods.
 
+## Hearth Launcher for players
+
+The landing page offers **Hearth Launcher** for Windows x64 and Linux x64 / Steam Proton. Players save your HTTPS server website and their Valheim folder, then press **Play**. The launcher checks the client collection, updates mods with a backup when needed, and sends the connection address to Steam. Linux requires a one-time Proton configuration in Steam. [Player instructions](launcher.en.md).
+
+Downloads appear when the panel image includes ready assets in `app/downloads/`: `Hearth-Launcher.exe`, `Hearth-Launcher-Linux.tar.gz`, their `.sha256` files, and `Hearth-Launcher.version`. The public `/api/public` response advertises links, sizes, and SHA-256 only for available files. The website and game address come from the landing settings; players can save multiple server profiles. Publisher signing is not included yet.
+
+After you change the collection, launcher users can press Play again. Profiles sharing one Valheim folder also share configurations. Steam updates the game; passwords and character selection stay in the game. For vanilla launches, supported Doorstop loaders are disabled for that launch without deleting mods.
+
 ## Worlds and backups
 
 ### Full game backups
@@ -403,4 +411,4 @@ node tests/test_i18n.cjs
 
 Build the Windows installer from PowerShell with `./installer/build.ps1`, and the Linux installer with `python installer-linux/build.py`. Published installers and their SHA-256 files are under `app/downloads/`. The game-server version and Hearth panel version are independent.
 
-Source directories: [panel](../app/), [Windows installer](../installer/), [Linux installer](../installer-linux/), and [tests](../tests/). Run development checks from the repository root with application dependencies installed; they are not required for ordinary server operation.
+Source directories: [panel](../app/), [Windows installer](../installer/), [Linux installer](../installer-linux/), [launcher and build instructions](../launcher/README.md), and [tests](../tests/). Run development checks from the repository root with application dependencies installed; they are not required for ordinary server operation.
