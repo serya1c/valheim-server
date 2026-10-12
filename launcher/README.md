@@ -1,8 +1,8 @@
-# Hearth Launcher 1.0.0
+# Hearth Launcher 1.1.0
 
 Native Windows x64 and Linux x64 desktop launcher for Steam Valheim and Hearth servers. The interface switches immediately between Russian and English. Server profiles contain the HTTPS Hearth website, Steam game folder, and an optional game address override.
 
-Opening the launcher reads local profiles and detects Steam folders. It does not contact a server, install mods, or launch Valheim. Select the game in **Found in Steam**; **Detect** repeats the search, and **Browse…** adds a directory manually. Save the profile to keep the selected directory for the next launch.
+Opening the launcher reads local profiles, detects Steam folders, and automatically refreshes the server's information. Selecting a game directory also checks its client collection. These checks inspect metadata and files; mod installation happens when you press **Play**. Select the game in **Found in Steam**; **Detect** repeats the search, and **Browse…** adds a directory manually. Save the profile to keep the selected directory for the next launch.
 
 Press **Play** to automatically check and, if needed, synchronize the selected server's mods before asking Steam to launch Valheim. Changed files are backed up; verified archives are cached, and an unchanged collection is left in place. The launcher does not update the game; Steam does. Reliable automatic comparison of the local game version is not provided in this version.
 
@@ -12,7 +12,11 @@ The launcher blocks conflicting actions and window closing during an operation. 
 
 ## Running
 
-On Windows, run `Hearth-Launcher.exe` as your normal user. This first version is unsigned. On Linux, extract `Hearth-Launcher-Linux.tar.gz` and run `./Hearth-Launcher` as your normal desktop user, without `sudo`. The executable is self-contained: users do not need the .NET SDK or a separately installed .NET runtime. Linux still requires system desktop libraries and fonts; see the [Avalonia Linux deployment requirements](https://docs.avaloniaui.net/docs/deployment/linux) and [.NET Linux dependencies](https://learn.microsoft.com/en-us/dotnet/core/install/linux).
+On Windows, open **`Hearth-Launcher-Setup.exe`**. It installs for the current user under `%LOCALAPPDATA%/Programs/HearthLauncher`, adds desktop and Start menu shortcuts, and can open the launcher immediately. No administrator account is required. Reinstall with a newer setup to update; close the launcher first. Remove it through Windows Settings → Apps. Server profiles and all game/mod files remain. The launcher and setup are currently unsigned.
+
+On Linux, run **`bash Hearth-Launcher-Install-Linux.sh`** as your normal desktop user, without `sudo`. The offline installer includes the launcher and icon, verifies its embedded archive, installs under `$XDG_DATA_HOME/HearthLauncher` (default `~/.local/share/HearthLauncher`), and adds desktop and application-menu shortcuts. If the desktop asks, choose **Allow Launching**. Re-run a newer installer to update with the launcher closed. To uninstall, run `bash ~/.local/share/HearthLauncher/uninstall.sh` (adjust the directory if using `XDG_DATA_HOME`). Profiles, Steam, Valheim and mods remain.
+
+Portable editions remain available: run `Hearth-Launcher.exe` on Windows, or extract `Hearth-Launcher-Linux.tar.gz` and run `./Hearth-Launcher` on Linux. Both setup distributions are self-contained and include their launcher; installation does not require network access, Python, the .NET SDK or a separately installed .NET runtime. Linux still requires system desktop libraries and fonts; see the [Avalonia Linux deployment requirements](https://docs.avaloniaui.net/docs/deployment/linux) and [.NET Linux dependencies](https://learn.microsoft.com/en-us/dotnet/core/install/linux).
 
 Install Steam and its **Windows Valheim client**. On Linux, select Proton under Valheim Properties → Compatibility. For modded servers, set Steam Launch Options once:
 
@@ -38,7 +42,7 @@ bash launcher/build.sh
 
 PowerShell parameters `-Dotnet` and `-Python`, or Bash environment variables `DOTNET` and `PYTHON`, can select tool executables. Restore needs access to `https://api.nuget.org/v3/index.json`. Outputs are confined to `launcher/bin`, `launcher/obj`, `launcher/.packages`, and `launcher/.build`; no Steam files are modified by building.
 
-Assets appear under `launcher/.build/assets/`: `Hearth-Launcher.exe`, `Hearth-Launcher-Windows-x64.zip`, `Hearth-Launcher-Linux.tar.gz`, and `SHA256SUMS.txt`. The Linux archive explicitly preserves executable mode 0755, including when packaged on Windows. Publish uses a compressed single executable and extracts bundled native libraries to .NET's temporary cache at run time; that cache needs to be writable. Code signing and distribution are separate release steps.
+Assets appear under `launcher/.build/assets/`: `Hearth-Launcher-Setup.exe`, `Hearth-Launcher-Install-Linux.sh`, `Hearth-Launcher.exe`, `Hearth-Launcher-Windows-x64.zip`, `Hearth-Launcher-Linux.tar.gz`, their SHA-256 sidecars, `Hearth-Launcher.version`, and `SHA256SUMS.txt`. The Linux archive explicitly preserves executable mode 0755, including when packaged on Windows. Setup source lives under `launcher/setup`; isolated installation checks under `launcher/setup-tests` never change your actual desktop or registry. The standard-library-only `launcher/Assets/generate_icon.py` reproduces the committed SVG, PNG and six-size ICO. Publish uses a compressed single executable and extracts bundled native libraries to .NET's temporary cache at run time; that cache needs to be writable. Code signing and distribution are separate release steps.
 
 ## Offline GUI checks
 

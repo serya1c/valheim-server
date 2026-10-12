@@ -36,7 +36,7 @@
       const info=value.builtin_admin,installed=value.packages?.find(p=>p.id===info.id);
       builtin.append(text('p','ВСТРОЕННЫЙ АДМИН-МОД',false,'eyebrow accent'),text('h3','Hearth Admin'),
         text('p','Игровое меню по F8: телепорты, помощь игрокам, предметы и мобы, рельеф, супермолот, строительство и журнал. Управляйте ими также из раздела «Игровые инструменты».',false,'muted'),
-        text('p','Требуется на сервере и у всех игроков. Установщики на лендинге получат ту же версию. В игровом меню есть переключатель RU / EN.',false,'tiny'),
+        text('p','Требуется на сервере и у всех игроков. Лаунчер получит ту же версию при нажатии «Играть». В игровом меню есть переключатель RU / EN.',false,'tiny'),
         text('p','Если ValheimAdminRu уже ставили вручную, сначала уберите прежнюю DLL с сервера и клиентов, чтобы избежать двух копий мода.',false,'tiny'),
         text('p','Целевые версии Valheim: '+info.games.join(', '),false,'tiny'));
       const version=document.createElement('p');version.append(text('span','Версия: '),text('span',info.version,true));builtin.append(version);

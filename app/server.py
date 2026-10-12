@@ -33,7 +33,7 @@ from player_access import PlayerAccess, LABELS as PLAYER_ACTION_NAMES, steam_id
 from health import HealthMonitor
 from mods import ModManager
 from game_admin import GameAdmin, builtin_info, BUNDLE
-from launcher_downloads import launcher_downloads
+from launcher_downloads import DOWNLOAD_NAMES, launcher_downloads
 
 BASE = Path(os.getenv('DATA_DIR', '/data'))
 PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
@@ -1049,12 +1049,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         if self.path in {'/downloads/Loki-Mod-Installer.exe', '/downloads/Loki-Mod-Installer.exe.sha256',
                          '/downloads/Loki-Mod-Installer-Linux.sh', '/downloads/Loki-Mod-Installer-Linux.sh.sha256',
-                         '/downloads/Hearth-Launcher.exe', '/downloads/Hearth-Launcher.exe.sha256',
-                         '/downloads/Hearth-Launcher-Linux.tar.gz', '/downloads/Hearth-Launcher-Linux.tar.gz.sha256'}:
+                         *('/downloads/' + name for name in DOWNLOAD_NAMES)}:
             name = self.path.rsplit('/', 1)[1]
             path = Path(__file__).parent / 'downloads' / name
-            if not path.is_file():
-                return self.reply(404, {'error': 'Установщик ещё не опубликован'})
+            if not path.is_file() or path.is_symlink():
+                return self.reply(404, {'error': 'Загрузка ещё не опубликована'})
             with path.open('rb') as source:
                 self.send_response(200)
                 self.send_header('Content-Type', 'application/octet-stream')

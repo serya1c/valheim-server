@@ -1,8 +1,10 @@
-"""Public metadata for the desktop launcher binaries included in this image."""
+"""Public metadata for launcher installers and portable builds in this image."""
 from pathlib import Path
 import re
 
-NAMES = {'windows': 'Hearth-Launcher.exe', 'linux': 'Hearth-Launcher-Linux.tar.gz'}
+NAMES = {'windows': 'Hearth-Launcher-Setup.exe', 'linux': 'Hearth-Launcher-Install-Linux.sh',
+         'windows_portable': 'Hearth-Launcher.exe', 'linux_portable': 'Hearth-Launcher-Linux.tar.gz'}
+DOWNLOAD_NAMES = frozenset(name + suffix for name in NAMES.values() for suffix in ('', '.sha256'))
 
 
 def launcher_downloads(folder=None):

@@ -44,8 +44,8 @@ class LauncherHttpTests(unittest.TestCase):
         status, _, body = self.get('/api/public')
         self.assertEqual(status, 200)
         metadata = json.loads(body)['launcher']
-        self.assertEqual(metadata['version'], '1.0.0')
-        for platform in ('windows', 'linux'):
+        self.assertEqual(metadata['version'], '1.1.0')
+        for platform in ('windows', 'linux', 'windows_portable', 'linux_portable'):
             artifact = metadata[platform]
             status, headers, payload = self.get(artifact['url'])
             self.assertEqual(status, 200)
@@ -56,7 +56,11 @@ class LauncherHttpTests(unittest.TestCase):
             status, _, checksum = self.get(artifact['checksum_url'])
             self.assertEqual(status, 200)
             self.assertEqual(checksum.decode().split()[0], artifact['sha256'])
-        self.assertEqual(self.get('/downloads/Hearth-Launcher.version')[0], 401)
+        self.assertEqual(metadata['windows']['url'], '/downloads/Hearth-Launcher-Setup.exe')
+        self.assertEqual(metadata['linux']['url'], '/downloads/Hearth-Launcher-Install-Linux.sh')
+        for path in ('/downloads/Hearth-Launcher.version', '/downloads/Hearth-Launcher-Setup.exe.config',
+                     '/downloads/../server.py', '/downloads/%2e%2e/server.py'):
+            self.assertNotEqual(self.get(path)[0], 200)
         self.assertEqual(self.get('/api/status')[0], 401)
 
     def test_landing_inserts_launcher_and_escapes_server_title(self):
@@ -68,6 +72,9 @@ class LauncherHttpTests(unittest.TestCase):
         html = body.decode()
         self.assertNotIn('{{LAUNCHER_CARD}}', html)
         self.assertIn('id="launcher-downloads"', html)
+        self.assertIn('bash Hearth-Launcher-Install-Linux.sh', html)
+        self.assertNotIn('Loki-Mod-Installer', html)
+        self.assertNotIn('Установи моды сервера', html)
         self.assertIn('&lt;img src=x onerror=alert(1)&gt;', html)
         self.assertNotIn('<img src=x onerror=alert(1)>', html)
 

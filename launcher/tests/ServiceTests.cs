@@ -118,6 +118,7 @@ public static class ServiceTests
         try
         {
             await Synchronization(root);
+            await ReadOnlyInspection(root);
             await AutomaticPlay(root);
             await BadPayloads(root);
             await PlusAndVanilla(root);
@@ -135,7 +136,7 @@ public static class ServiceTests
         var profile = new LauncherProfile("north", "North", "https://north.example", game);
         var net = new Network(); var service = Service(Path.Combine(root, "sync-state"), net);
         var initial = await service.InspectAsync(profile);
-        Check(initial.NeedsSync && initial.LocalGameVersion is null && initial.Server.Title == "Northern Hearth", "inspect custom domain and honest unknown game version");
+        Check(initial.NeedsSync && initial.ClientState == ClientCollectionState.InstallRequired && initial.LocalGameVersion is null && initial.Server.Title == "Northern Hearth", "inspect custom domain and honest unknown game version");
         var first = await service.SynchronizeAsync(profile);
         Check(first.ChangedFiles == 4 && !first.NeedsSync && net.Downloads == 1, "first generic sync installs complete checked bundle");
         var inventory = Installer.LoadInventory(game)!;
@@ -189,6 +190,72 @@ public static class ServiceTests
         var repeated = await service.PlayAsync(profile, true);
         Check(launches == 2 && network.Downloads == 1 && repeated.ChangedFiles == 0,
             "repeated Play verifies the installed collection without downloading it again");
+    }
+
+    static async Task ReadOnlyInspection(string root)
+    {
+        string game = NewGame(root, "inspection"), state = Path.Combine(root, "inspection-state");
+        var network = new Network(); int gameChecks = 0;
+        var service = new LauncherService(state, _ => new Handler(network), () => gameChecks++,
+            (_, _, _, _) => throw new Exception("Read-only inspection must never launch a game"));
+        var profile = new LauncherProfile("inspect", "Inspect", "https://north.example", "");
+        var noFolder = await service.InspectAsync(profile);
+        Check(noFolder.ClientState == ClientCollectionState.FolderRequired && noFolder.Server.Running && noFolder.Server.Players == 3
+            && noFolder.Server.Game == "1.0.17", "server cards are available before a game folder is selected");
+        var badFolder = await service.InspectAsync(profile with { GamePath = Path.Combine(root, "missing-game") });
+        Check(badFolder.ClientState == ClientCollectionState.CheckFailed && badFolder.NeedsSync && !string.IsNullOrEmpty(badFolder.ClientCheckError)
+            && badFolder.Server.Title == "Northern Hearth", "invalid selected game folder cannot be reported ready and preserves server data");
+        Check(!Directory.Exists(state) && network.Downloads == 0 && network.Releases == 0 && gameChecks == 0,
+            "startup and folder checks neither create cache or install state nor fetch archives or require the game closed");
+        profile = profile with { GamePath = game };
+        var initial = await service.InspectAsync(profile);
+        Check(initial.ClientState == ClientCollectionState.InstallRequired && initial.TotalFiles == 0 && !Directory.Exists(Path.Combine(game, ".hearth-launcher")),
+            "fresh client requires installation without creating game files");
+        await service.SynchronizeAsync(profile);
+        int downloads = network.Downloads, closedChecks = gameChecks;
+        Dictionary<string, (string Digest, DateTime Modified)> Tree() => Directory.GetFiles(game, "*", SearchOption.AllDirectories)
+            .ToDictionary(path => Path.GetRelativePath(game, path), path => (Installer.Hash(path), File.GetLastWriteTimeUtc(path)));
+        var before = Tree();
+        var ready = await service.InspectAsync(profile);
+        Check(ready.ClientState == ClientCollectionState.Ready && !ready.NeedsSync && ready.TotalFiles == 4 && ready.ChangedFiles == 0,
+            "automatic client check verifies the complete installed collection");
+        var after = Tree();
+        Check(before.Count == after.Count && before.All(item => after.TryGetValue(item.Key, out var value) && value == item.Value)
+            && network.Downloads == downloads && gameChecks == closedChecks, "ready inspection leaves file bytes and timestamps unchanged with no downloads or game process check");
+        string addon = Installer.SafePath(game, "BepInEx/plugins/HearthMods/Author-Addon/addon.dll");
+        File.WriteAllText(addon, "modified without touching the inventory");
+        var damaged = await service.InspectAsync(profile);
+        Check(damaged.ClientState == ClientCollectionState.UpdateRequired && damaged.NeedsSync && damaged.ChangedFiles == 1
+            && File.ReadAllText(addon) == "modified without touching the inventory", "inspection hashes actual managed files and does not repair changed content");
+        File.WriteAllText(addon, "first");
+        network.Bundle = Zip(Full("server changed"));
+        var stale = await service.InspectAsync(profile);
+        Check(stale.ClientState == ClientCollectionState.UpdateRequired && stale.ChangedFiles == 0 && stale.NeedsSync,
+            "changed server manifest requires synchronization even when local file hashes match the old inventory");
+        var inventory = Installer.LoadInventory(game)!;
+        network.Bundle = Zip(Full());
+        // Match the exact original manifest, then vary only ownership metadata.
+        inventory = inventory with { Manifest = Installer.ManifestKey(SourceClient.ParseServer(Bytes(network.Api()))) };
+        string inventoryPath = Installer.SafePath(game, ".hearth-launcher/inventory.json");
+        Installer.WriteJson(inventoryPath, inventory with { Website = "https://south.example" });
+        Check((await service.InspectAsync(profile)).ClientState == ClientCollectionState.UpdateRequired,
+            "another server's installed inventory is not treated as ready");
+        Installer.WriteJson(inventoryPath, inventory with { Mode = "plus" });
+        Check((await service.InspectAsync(profile)).ClientState == ClientCollectionState.UpdateRequired,
+            "inconsistent inventory mode is not treated as ready");
+        File.WriteAllText(inventoryPath, "broken inventory");
+        var broken = await service.InspectAsync(profile);
+        Check(broken.ClientState == ClientCollectionState.CheckFailed && broken.NeedsSync && broken.Server.Running && !string.IsNullOrEmpty(broken.ClientCheckError),
+            "unreadable inventory reports a failed client check while keeping server state");
+        network.Mode = "vanilla";
+        var vanilla = await service.InspectAsync(profile);
+        Check(vanilla.ClientState == ClientCollectionState.NotRequired && !vanilla.NeedsSync && File.ReadAllText(inventoryPath) == "broken inventory",
+            "vanilla needs no mod collection and does not read or rewrite unused mod inventory");
+        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        try { await service.InspectAsync(profile, cancelled.Token); throw new Exception("Cancellation must be observed"); }
+        catch (OperationCanceledException) { Check(true, "cancelled inspection propagates cancellation instead of reporting a failed or ready client"); }
+        Check(network.Downloads == downloads && gameChecks == closedChecks && network.ExternalCalls == 0,
+            "all background client states are read-only and use only the server public API");
     }
 
     static async Task BadPayloads(string root)
@@ -259,7 +326,9 @@ public static class ServiceTests
         string inventory = File.ReadAllText(Path.Combine(game, ".hearth-launcher", "inventory.json"));
         string plus = Installer.SafePath(game, "BepInEx/plugins/ValheimPlus.dll");
         File.WriteAllBytes(plus, Dll("ValheimPlus", new(0, 11, 0, 0)));
-        await Reject(() => service.InspectAsync(profile), "inspect detects manually added V+ despite valid owned files");
+        var conflict = await service.InspectAsync(profile);
+        Check(conflict.ClientState == ClientCollectionState.CheckFailed && conflict.NeedsSync && !string.IsNullOrEmpty(conflict.ClientCheckError)
+            && conflict.Server.Title == "Northern Hearth", "inspect detects manually added V+ and preserves server status without claiming readiness");
         await Reject(() => service.SynchronizeAsync(profile), "no-op cannot bypass manually added V+");
         await Reject(() => service.PlayAsync(profile, true), "manually added V+ blocks Steam launch");
         Check(!launched && net.Downloads == downloads && File.ReadAllText(Path.Combine(game, ".hearth-launcher", "inventory.json")) == inventory,

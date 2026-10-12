@@ -608,8 +608,8 @@ class HttpTests(unittest.TestCase):
         data = json.loads(raw)
         self.assertEqual(status,200)
         self.assertEqual(set(data), {'title','description','description_en','address','community_url','running','players','game','mod','server_name','mode','site_url','public_listing','maintenance','client_mods','launcher'})
-        self.assertEqual(set(data['launcher']), {'version', 'windows', 'linux'})
-        for platform in ('windows', 'linux'):
+        self.assertEqual(set(data['launcher']), {'version', 'windows', 'linux', 'windows_portable', 'linux_portable'})
+        for platform in ('windows', 'linux', 'windows_portable', 'linux_portable'):
             self.assertEqual(set(data['launcher'][platform]), {'url', 'sha256', 'size', 'checksum_url'})
         self.assertNotIn('must-not-leak', raw.decode())
         self.assertNotIn('password',raw.decode())
@@ -623,7 +623,7 @@ class HttpTests(unittest.TestCase):
         self.assertEqual(headers['X-Content-Type-Options'], 'nosniff')
         digest = self.request('GET', '/downloads/Loki-Mod-Installer.exe.sha256')[2].decode().split()[0]
         self.assertEqual(hashlib.sha256(raw).hexdigest(), digest)
-        self.assertIn(b'href="/downloads/Loki-Mod-Installer.exe"', self.request('GET', '/')[2])
+        self.assertNotIn(b'Loki-Mod-Installer.exe', self.request('GET', '/')[2])
 
     def test_download_route_does_not_expose_arbitrary_files(self):
         for path in ['/downloads/../server.py', '/downloads/server.py', '/downloads/%2e%2e/server.py']:
@@ -638,7 +638,8 @@ class HttpTests(unittest.TestCase):
         digest = self.request('GET', '/downloads/Loki-Mod-Installer-Linux.sh.sha256')[2].decode().split()[0]
         self.assertEqual(hashlib.sha256(raw).hexdigest(), digest)
         html = self.request('GET', '/')[2]
-        self.assertIn(b'href="/downloads/Loki-Mod-Installer-Linux.sh"', html)
+        self.assertNotIn(b'Loki-Mod-Installer-Linux.sh', html)
+        self.assertIn(b'bash Hearth-Launcher-Install-Linux.sh', html)
         self.assertIn(b'WINEDLLOVERRIDES="winhttp=n,b" %command%', html)
 
     def test_public_online_does_not_expose_names_or_stale_counts(self):

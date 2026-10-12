@@ -13,14 +13,21 @@ function renderLauncher(){
  if(!lastPublic)return;
  const launcher=lastPublic.launcher, section=el('launcher-downloads');
  let ready=false;
- for(const [platform,name] of Object.entries({windows:'Hearth-Launcher.exe',linux:'Hearth-Launcher-Linux.tar.gz'})){
+ for(const [platform,name] of Object.entries({windows:'Hearth-Launcher-Setup.exe',linux:'Hearth-Launcher-Install-Linux.sh',windows_portable:'Hearth-Launcher.exe',linux_portable:'Hearth-Launcher-Linux.tar.gz'})){
   const asset=launcher?.[platform], link=el('launcher-'+platform), checksum=el('launcher-'+platform+'-checksum');
   const valid=asset?.url==='/downloads/'+name&&asset.checksum_url==='/downloads/'+name+'.sha256'&&Number.isSafeInteger(asset.size)&&asset.size>0&&/^[a-f0-9]{64}$/i.test(asset.sha256||'');
   link.hidden=checksum.hidden=!valid;
   if(valid){link.href=asset.url;checksum.href=asset.checksum_url;ready=true;}
   else{link.removeAttribute('href');checksum.removeAttribute('href');}
  }
+ let installReady=!el('launcher-windows').hidden||!el('launcher-linux').hidden;
+ document.querySelectorAll('[data-launcher-install]').forEach(node=>node.hidden=!installReady);
+ document.querySelectorAll('[data-launcher-portable-only]').forEach(node=>node.hidden=installReady||!ready);
+ document.querySelectorAll('[data-launcher-pending-only]').forEach(node=>node.hidden=ready);
+ document.querySelectorAll('[data-launcher-linux-install]').forEach(node=>node.hidden=el('launcher-linux').hidden);
+ document.querySelectorAll('[data-launcher-linux-portable-only]').forEach(node=>node.hidden=!el('launcher-linux').hidden||el('launcher-linux_portable').hidden);
  section.hidden=!ready;
+ el('launcher-portables').hidden=el('launcher-windows_portable').hidden&&el('launcher-linux_portable').hidden;
 }
 window.addEventListener('hearth-language',()=>{renderDescription();renderMaintenance();renderClientMods();renderLauncher();});
 function setText(id,value){el(id).textContent=value;}
@@ -38,7 +45,6 @@ async function refreshPublic(){
   document.querySelectorAll('[data-listing]').forEach(n=>n.hidden=!data.public_listing);
   document.querySelectorAll('[data-site-url]').forEach(n=>n.textContent=data.site_url);
   document.querySelectorAll('[data-site-link]').forEach(n=>n.href=data.site_url);
-  document.querySelectorAll('[data-proton-command]').forEach(n=>n.textContent='bash Loki-Mod-Installer-Linux.sh --server '+data.site_url);
   document.querySelectorAll('[data-plus]').forEach(n=>n.hidden=!plus);document.querySelectorAll('[data-vanilla]').forEach(n=>n.hidden=hasMods);document.querySelectorAll('[data-modded]').forEach(n=>n.hidden=!modded);document.querySelectorAll('[data-mods]').forEach(n=>n.hidden=!hasMods);
   setText('mode-label',plus?'Valheim Plus':modded?'BepInEx · Моды':'Ванильный сервер');
 
@@ -53,11 +59,6 @@ async function refreshPublic(){
   const community=el('community-link');
   if(data.community_url&&/^https?:\/\//i.test(data.community_url)){community.href=data.community_url;community.hidden=false;}else{community.hidden=true;community.removeAttribute('href');}
   renderClientMods();renderLauncher();
-  const mod=el('mod-download');
-  if(data.mod&&/^\d+\.\d+\.\d+(?:\.\d+)?$/.test(data.mod)){
-   mod.href='https://github.com/Grantapher/ValheimPlus/releases/tag/'+encodeURIComponent(data.mod);mod.textContent='Скачать V+ '+data.mod+' ↗';
-   setText('mod-match','На сервере установлен V+ '+data.mod+'. Выбирай клиентский пакет для своей ОС, не UnixServer.zip.');
-  }else{mod.href='https://github.com/Grantapher/ValheimPlus/releases';mod.textContent='Релизы мода ↗';setText('mod-match','Версия ещё не определена. Уточни её у администратора перед загрузкой.');}
  }catch{
   setText('public-status','Нет связи с сервером');setText('public-players','—');setText('status-note','Не удалось обновить состояние. Повторим запрос автоматически; ранее показанные версии и адрес могут быть устаревшими.');
  }finally{pending=false;}

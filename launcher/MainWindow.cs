@@ -33,6 +33,7 @@ public sealed class MainWindow : Window
     private readonly TextBlock _mod = Value();
     private readonly TextBlock _online = Value();
     private readonly TextBlock _packages = new() { Foreground = Muted, TextWrapping = TextWrapping.Wrap };
+    private readonly TextBlock _collectionStatus = new() { Foreground = Gold, TextWrapping = TextWrapping.Wrap, FontWeight = FontWeight.SemiBold };
     private readonly TextBlock _notes = new() { TextWrapping = TextWrapping.Wrap, Foreground = Muted };
     private readonly TextBox _activity = new() { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, MinHeight = 112, MaxHeight = 180, Background = BackgroundInk, FontSize = 12 };
     private readonly CheckBox _connect = new() { IsChecked = true };
@@ -49,7 +50,11 @@ public sealed class MainWindow : Window
     private string? _selectedId;
     private LauncherReport? _report;
     private CancellationTokenSource? _operation;
-    private bool _busy, _changingProfiles, _changingGames;
+    private CancellationTokenSource? _inspection;
+    private Task _inspectionTask = Task.CompletedTask;
+    private long _inspectionGeneration;
+    private bool _busy, _changingProfiles, _changingGames, _loadingProfile, _opened, _closed, _checking;
+    private string? _checkFailure;
     private string _gamePath = "";
     private IReadOnlyList<string> _detectedGames = [];
 
@@ -65,6 +70,7 @@ public sealed class MainWindow : Window
         if (_profiles.Count == 0) _profiles.Add(new LauncherProfile(Guid.NewGuid().ToString("N"), "Loki", "https://loki.ach-play.ru", ""));
         _selectedId = _profiles.Any(p => p.Id == settings.SelectedProfileId) ? settings.SelectedProfileId : _profiles[0].Id;
         Title = "Hearth Launcher";
+        Icon = LauncherIcon.Load();
         Width = 1170; Height = 870; MinWidth = 920; MinHeight = 680;
         Background = BackgroundInk;
         Foreground = Brush.Parse("#E9EEE6");
@@ -97,7 +103,7 @@ public sealed class MainWindow : Window
         _detected.SelectionChanged += (_, _) =>
         {
             if (_busy || _changingGames || _detected.SelectedItem is not string path) return;
-            _gamePath = path; _report = null; RenderReport();
+            _gamePath = path; QueueInspection();
         };
         foreach (var field in new Control[] { _profile, _detected, _name, _website, _address, _connect }) _blocked.Add(field);
 
@@ -115,7 +121,7 @@ public sealed class MainWindow : Window
         identity.Children.Add(Row(detect, browse));
         identity.Children.Add(Field("endpoint", _address, "endpointHint"));
         identity.Children.Add(saveButton);
-        identity.Children.Add(new TextBlock { Text = "HEARTH LAUNCHER · 1.0.0", FontSize = 10, Foreground = Muted, Margin = new Thickness(0, 20, 0, 0) });
+        identity.Children.Add(new TextBlock { Text = "HEARTH LAUNCHER · 1.1.0", FontSize = 10, Foreground = Muted, Margin = new Thickness(0, 20, 0, 0) });
         var sidebar = new Border { Background = PanelInk, BorderBrush = Line, BorderThickness = new Thickness(0, 0, 1, 0), Padding = new Thickness(24), Child = new ScrollViewer { Content = identity } };
 
         var body = new StackPanel { Spacing = 16, Margin = new Thickness(28, 24) };
@@ -131,7 +137,7 @@ public sealed class MainWindow : Window
         actions.Children.Add(Row(restore, _cancel, website, _community));
         actions.Children.Add(_progress);
         body.Children.Add(actions);
-        body.Children.Add(Card(new StackPanel { Spacing = 9, Children = { Text("packages", 16), _packages, Text("notes", 12, Gold), _notes } }));
+        body.Children.Add(Card(new StackPanel { Spacing = 9, Children = { Text("packages", 16), _collectionStatus, _packages, Text("notes", 12, Gold), _notes } }));
         var protonBody = new StackPanel { Spacing = 8, Children = { Text("protonTitle", 15), Text("protonBody", 12, Muted),
             new TextBlock { Text = "WINEDLLOVERRIDES=\"winhttp=n,b\" %command%", FontFamily = FontFamily.Default, Foreground = Gold, TextWrapping = TextWrapping.Wrap },
             Button("copyProton", CopyProtonAsync, block: false) } };
@@ -150,9 +156,10 @@ public sealed class MainWindow : Window
             eventArgs.Cancel = true;
             _ = ShowErrorAsync(T("busyClose"));
         };
-        Closed += (_, _) => _service.Log -= OnServiceLog;
+        Opened += (_, _) => { _opened = true; QueueInspection(); };
+        Closed += (_, _) => { _closed = true; CancelInspection(); _service.Log -= OnServiceLog; };
         foreach (var input in new[] { _website, _address }) input.TextChanged += (_, _) =>
-        { if (!_busy) { _report = null; RenderReport(); } };
+        { if (!_busy && !_loadingProfile) QueueInspection(600); };
         RefreshProfiles(); LoadProfile();
         SetDetected(detectedGames ?? SafeFindGames());
         UpdateLanguage();
@@ -217,9 +224,14 @@ public sealed class MainWindow : Window
     private void LoadProfile()
     {
         var profile = _profiles.First(p => p.Id == _selectedId);
-        _name.Text = profile.Name; _website.Text = profile.Website; _gamePath = profile.GamePath; _address.Text = profile.AddressOverride;
-        SetDetected(_detectedGames);
-        _report = null; RenderReport();
+        _loadingProfile = true;
+        try
+        {
+            _name.Text = profile.Name; _website.Text = profile.Website; _gamePath = profile.GamePath; _address.Text = profile.AddressOverride;
+            SetDetected(_detectedGames);
+        }
+        finally { _loadingProfile = false; }
+        _report = null; QueueInspection(); RenderReport();
     }
     private LauncherProfile Draft(bool validate = false)
     {
@@ -242,6 +254,7 @@ public sealed class MainWindow : Window
         var saved = _persisted.Profiles.Where(p => p.Id != profile.Id).ToList(); saved.Add(profile);
         Persist(new LauncherSettings(_language, saved, profile.Id));
         RefreshProfiles(); AppendLog(UiText.Get("ru", "saved")); _serverTitle.Text = profile.Name;
+        QueueInspection();
     }
     private async Task DeleteProfileAsync()
     {
@@ -278,13 +291,14 @@ public sealed class MainWindow : Window
     {
         var games = SafeFindGames(); SetDetected(games);
         if (games.Count == 0) AppendLog(UiText.Get("ru", "notFound"));
+        QueueInspection();
     }
     private async Task BrowseAsync()
     {
         if (!StorageProvider.CanPickFolder) return;
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = T("gameFolder"), AllowMultiple = false });
         if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path)
-        { _gamePath = path; SetDetected(_detectedGames); _report = null; RenderReport(); }
+        { _gamePath = path; SetDetected(_detectedGames); QueueInspection(); }
     }
     private async Task RestoreAsync()
     {
@@ -302,7 +316,7 @@ public sealed class MainWindow : Window
         if (_busy) return;
         var profile = Draft(true);
         if (string.IsNullOrWhiteSpace(profile.GamePath) || !Directory.Exists(profile.GamePath)) throw new InvalidOperationException(T("invalidFolder"));
-        CaptureDraft(); SetBusy(true); _operation = new CancellationTokenSource();
+        CaptureDraft(); _report = null; _checkFailure = null; SetBusy(true); _operation = new CancellationTokenSource();
         try
         {
             var result = await Task.Run(() => action(profile));
@@ -310,14 +324,67 @@ public sealed class MainWindow : Window
             AppendLog(UiText.Get("ru", resultKey));
         }
         catch (OperationCanceledException) { AppendLog(UiText.Get("ru", "cancelled")); }
-        catch (Exception error) { AppendLog(error.Message); await ShowErrorAsync(error.Message); }
-        finally { _operation.Dispose(); _operation = null; SetBusy(false); RenderReport(); }
+        catch (Exception error) { _checkFailure = error.Message; AppendLog(error.Message); await ShowErrorAsync(error.Message); }
+        finally
+        {
+            _operation.Dispose(); _operation = null; SetBusy(false); RenderReport();
+            if (resultKey == "restored") QueueInspection();
+        }
     }
     private void SetBusy(bool value)
     {
+        if (value) CancelInspection();
         _busy = value;
         foreach (var control in _blocked) control.IsEnabled = !value;
         _cancel.IsEnabled = value; _progress.IsVisible = value; RenderReport();
+    }
+    private void CancelInspection()
+    {
+        _inspectionGeneration++;
+        _inspection?.Cancel();
+        _inspection = null;
+        _checking = false;
+    }
+    private void QueueInspection(int delay = 0)
+    {
+        CancelInspection();
+        _report = null; _checkFailure = null;
+        if (!_opened || _closed || _busy || _loadingProfile) { RenderReport(); return; }
+        _checking = true;
+        var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(45));
+        _inspection = cancellation;
+        var generation = _inspectionGeneration;
+        RenderReport();
+        _inspectionTask = InspectAutomaticallyAsync(cancellation, generation, delay);
+    }
+    private async Task InspectAutomaticallyAsync(CancellationTokenSource cancellation, long generation, int delay)
+    {
+        bool Current() => !_closed && !_busy && generation == _inspectionGeneration;
+        try
+        {
+            // Debounce editable website/address fields and abandon results for old selections.
+            await Task.Delay(Math.Max(1, delay), cancellation.Token);
+            var profile = Draft(true);
+            var report = await Task.Run(() => _service.InspectAsync(profile, cancellation.Token), cancellation.Token);
+            if (Current())
+            {
+                _report = report;
+                AppendLog(report.ClientState == ClientCollectionState.CheckFailed ? report.ClientCheckError ?? UiText.Get("ru", "checkFailed") : UiText.Get("ru", "checked"));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            if (Current()) _checkFailure = UiText.Get("ru", "checkTimeout");
+        }
+        catch (Exception error)
+        {
+            if (Current()) { _checkFailure = error.Message; AppendLog(error.Message); }
+        }
+        finally
+        {
+            if (Current()) { _inspection = null; _checking = false; RenderReport(); }
+            cancellation.Dispose();
+        }
     }
     internal void PreviewReport(LauncherReport report) { _report = report; RenderReport(); }
     private void RenderReport()
@@ -327,10 +394,24 @@ public sealed class MainWindow : Window
         _localGame.Text = _report?.LocalGameVersion ?? T("unknown");
         _mod.Text = _report is null ? "—" : _report.Server.Mode == "vanilla" ? T("vanilla") : _report.Server.Mode == "plus" ? "V+ " + (_report.Server.Mod ?? "—") : T("modded");
         _online.Text = _report is null ? "—" : !_report.Server.Running ? T("stopped") : _report.Server.Players?.ToString() ?? T("unknownPlayers");
-        _packages.Text = _report?.Server.Packages.Count > 0 ? string.Join("\n", _report.Server.Packages.Select(p => "• " + p)) : T("noPackages");
+        _collectionStatus.Text = _checking ? T("checking") : _checkFailure is not null ? T("checkFailed") : _report is null ? T("notChecked")
+            : T(_report.ClientState switch
+            {
+                ClientCollectionState.FolderRequired => "collectionFolder",
+                ClientCollectionState.InstallRequired => "collectionInstall",
+                ClientCollectionState.UpdateRequired => "collectionUpdate",
+                ClientCollectionState.NotRequired => "collectionVanilla",
+                ClientCollectionState.CheckFailed => "checkFailed",
+                _ => "collectionReady"
+            });
+        _collectionStatus.Foreground = (_report?.ClientState is ClientCollectionState.Ready or ClientCollectionState.NotRequired) && !_checking && _checkFailure is null
+            ? Brush.Parse("#A3D5AE") : Gold;
+        _packages.Text = _report is null ? "—" : _report.Server.Packages.Count > 0 ? string.Join("\n", _report.Server.Packages.Select(p => "• " + p)) : T("noPackages");
         var notes = _report?.Notes.ToList() ?? [];
-        if (_report is not null && _report.LocalGameVersion is null) notes.Add(UiText.Get("ru", "unknownVersionNote"));
-        _notes.Text = notes.Count == 0 ? T("idleHint") : string.Join("\n", notes.Distinct().Select(note => "• " + UiText.Translate(_language, note)));
+        if (_report?.ClientCheckError is { } clientError) notes.Insert(0, clientError);
+        if (_report is not null && _report.LocalGameVersion is null && !notes.Any(note => note.StartsWith("Версия установленной игры", StringComparison.Ordinal)))
+            notes.Add(UiText.Get("ru", "unknownVersionNote"));
+        _notes.Text = _checkFailure is not null ? UiText.Translate(_language, _checkFailure) : notes.Count == 0 ? T("idleHint") : string.Join("\n", notes.Distinct().Select(note => "• " + UiText.Translate(_language, note)));
         _community.IsVisible = SafeUrl(_report?.Server.CommunityUrl, true);
         _proton.IsVisible = _showProton && _report?.Server.Mode != "vanilla";
         _copyAddress.IsEnabled = !string.IsNullOrWhiteSpace(ConnectionAddress());
@@ -383,6 +464,8 @@ public sealed class MainWindow : Window
 
     internal void AssertSmoke()
     {
+        CancelInspection();
+        bool opened = _opened; _opened = false;
         var before = _website.Text;
         var originalReport = _report ?? throw new Exception("Smoke fixture requires a report");
         var persistedProfile = _persisted.Profiles.First(p => p.Id == _selectedId);
@@ -402,6 +485,7 @@ public sealed class MainWindow : Window
         PreviewReport(originalReport);
         if (ConnectionAddress() != _report?.Server.Address || !_copyAddress.IsEnabled) throw new Exception("Published game address was not offered for copying");
         var originalPath = _gamePath;
+        var originalGames = _detectedGames;
         var manualPath = Path.Combine(Path.GetTempPath(), "Hearth-Manual-Selection");
         _gamePath = manualPath; SetDetected([originalPath, originalPath]);
         if (!Equals(_detected.SelectedItem, manualPath) || Draft().GamePath != manualPath || _detected.ItemCount != 2)
@@ -412,8 +496,19 @@ public sealed class MainWindow : Window
         SetDetected([]);
         if (!Equals(_detected.SelectedItem, manualPath) || Draft().GamePath != manualPath)
             throw new Exception("A Steam scan discarded the saved manual game folder");
-        _gamePath = originalPath; SetDetected([originalPath]); SaveProfile();
+        _gamePath = originalPath; SetDetected(originalGames); SaveProfile();
+        // TextChanged is dispatched later by Avalonia; drain fixture edits before enabling checks again.
+        Dispatcher.UIThread.RunJobs();
         _logs.Clear(); RenderLogs(); PreviewReport(originalReport);
+        _opened = opened;
     }
+    internal Task InspectionForSmoke => _inspectionTask;
+    internal LauncherReport? ReportForSmoke => _report;
+    internal bool CheckingForSmoke => _checking;
+    internal string CollectionTextForSmoke => _collectionStatus.Text ?? "";
+    internal void SelectGameForSmoke(string path) => _detected.SelectedItem = path;
+    internal void SetWebsiteForSmoke(string website) { _website.Text = website; Dispatcher.UIThread.RunJobs(); }
+    internal void BeginOperationForSmoke() => SetBusy(true);
+    internal void EndOperationForSmoke() => SetBusy(false);
     private sealed record ProfileChoice(string Id, string Name) { public override string ToString() => Name; }
 }
