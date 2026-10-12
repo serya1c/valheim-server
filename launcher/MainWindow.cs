@@ -26,11 +26,8 @@ public sealed class MainWindow : Window
     private readonly ComboBox _detected = new() { HorizontalAlignment = HorizontalAlignment.Stretch };
     private readonly TextBox _name = Input();
     private readonly TextBox _website = Input();
-    private readonly TextBox _folder = Input();
     private readonly TextBox _address = Input();
     private readonly TextBlock _serverTitle = new() { FontSize = 29, FontWeight = FontWeight.SemiBold, TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock _status = new() { Foreground = Gold, FontSize = 15, TextWrapping = TextWrapping.Wrap };
-    private readonly TextBlock _details = new() { Foreground = Muted, TextWrapping = TextWrapping.Wrap };
     private readonly TextBlock _serverGame = Value();
     private readonly TextBlock _localGame = Value();
     private readonly TextBlock _mod = Value();
@@ -52,8 +49,9 @@ public sealed class MainWindow : Window
     private string? _selectedId;
     private LauncherReport? _report;
     private CancellationTokenSource? _operation;
-    private bool _busy, _changingProfiles;
-    private string _statusKey = "notChecked";
+    private bool _busy, _changingProfiles, _changingGames;
+    private string _gamePath = "";
+    private IReadOnlyList<string> _detectedGames = [];
 
     public MainWindow(ILauncherService service, LauncherSettings settings, Action<LauncherSettings> save,
         IReadOnlyList<string>? detectedGames = null, bool showProton = false)
@@ -74,13 +72,11 @@ public sealed class MainWindow : Window
         FontFamily = new FontFamily("Segoe UI, DejaVu Sans, sans-serif");
         FontSize = 13;
 
-        var add = Button("new", () => { CaptureDraft(); _profiles.Add(new LauncherProfile(Guid.NewGuid().ToString("N"), T("newName"), "", _folder.Text ?? "")); _selectedId = _profiles[^1].Id; RefreshProfiles(); LoadProfile(); });
+        var add = Button("new", () => { CaptureDraft(); _profiles.Add(new LauncherProfile(Guid.NewGuid().ToString("N"), T("newName"), "", _gamePath)); _selectedId = _profiles[^1].Id; RefreshProfiles(); LoadProfile(); });
         var delete = Button("delete", DeleteProfileAsync);
         var saveButton = Button("save", SaveProfile);
         var detect = Button("find", DetectGames);
         var browse = Button("browse", BrowseAsync);
-        var check = Button("check", () => RunAsync("checked", async p => await _service.InspectAsync(p, Token)));
-        var sync = Button("sync", SynchronizeAsync);
         var restore = Button("restore", RestoreAsync);
         var play = Button("play", PlayAsync, true);
         play.FontSize = 21; play.MinHeight = 54; play.MinWidth = 180;
@@ -98,8 +94,12 @@ public sealed class MainWindow : Window
             if (_changingProfiles || _busy || _profile.SelectedItem is not ProfileChoice selected) return;
             CaptureDraft(); _selectedId = selected.Id; LoadProfile();
         };
-        _detected.SelectionChanged += (_, _) => { if (!_busy && _detected.SelectedItem is string path) _folder.Text = path; };
-        foreach (var field in new Control[] { _profile, _detected, _name, _website, _folder, _address, _connect }) _blocked.Add(field);
+        _detected.SelectionChanged += (_, _) =>
+        {
+            if (_busy || _changingGames || _detected.SelectedItem is not string path) return;
+            _gamePath = path; _report = null; RenderReport();
+        };
+        foreach (var field in new Control[] { _profile, _detected, _name, _website, _address, _connect }) _blocked.Add(field);
 
         var identity = new StackPanel { Spacing = 8 };
         identity.Children.Add(new TextBlock { Text = "ᛟ  H E A R T H", Foreground = Gold, FontSize = 25, FontWeight = FontWeight.SemiBold });
@@ -110,7 +110,6 @@ public sealed class MainWindow : Window
         identity.Children.Add(Row(add, delete));
         identity.Children.Add(Field("name", _name));
         identity.Children.Add(Field("website", _website, "websiteHint"));
-        identity.Children.Add(Field("gameFolder", _folder));
         identity.Children.Add(Text("detected", 11, Muted));
         identity.Children.Add(_detected);
         identity.Children.Add(Row(detect, browse));
@@ -121,8 +120,6 @@ public sealed class MainWindow : Window
 
         var body = new StackPanel { Spacing = 16, Margin = new Thickness(28, 24) };
         body.Children.Add(new DockPanel { Children = { _serverTitle, new TextBlock { Text = "VALHEIM / STEAM", Foreground = Gold, FontSize = 10, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(12, 12) } } });
-        body.Children.Add(Text("intro", 13, Muted));
-        body.Children.Add(Card(new StackPanel { Spacing = 9, Children = { _status, _details, _progress } }));
         var metrics = new Grid { ColumnDefinitions = new ColumnDefinitions("*,*,*,*"), ColumnSpacing = 10 };
         AddGrid(metrics, Metric("serverGame", _serverGame), 0); AddGrid(metrics, Metric("clientGame", _localGame), 1);
         AddGrid(metrics, Metric("mod", _mod), 2); AddGrid(metrics, Metric("online", _online), 3);
@@ -130,8 +127,9 @@ public sealed class MainWindow : Window
         var actions = new StackPanel { Spacing = 10 };
         actions.Children.Add(Row(_connect, _copyAddress));
         actions.Children.Add(Text("playHint", 11, Muted));
-        actions.Children.Add(Row(play, check, sync));
+        actions.Children.Add(Row(play));
         actions.Children.Add(Row(restore, _cancel, website, _community));
+        actions.Children.Add(_progress);
         body.Children.Add(actions);
         body.Children.Add(Card(new StackPanel { Spacing = 9, Children = { Text("packages", 16), _packages, Text("notes", 12, Gold), _notes } }));
         var protonBody = new StackPanel { Spacing = 8, Children = { Text("protonTitle", 15), Text("protonBody", 12, Muted),
@@ -153,13 +151,10 @@ public sealed class MainWindow : Window
             _ = ShowErrorAsync(T("busyClose"));
         };
         Closed += (_, _) => _service.Log -= OnServiceLog;
-        foreach (var input in new[] { _website, _folder, _address }) input.TextChanged += (_, _) =>
-        { if (!_busy) { _report = null; _statusKey = "notChecked"; RenderReport(); } };
+        foreach (var input in new[] { _website, _address }) input.TextChanged += (_, _) =>
+        { if (!_busy) { _report = null; RenderReport(); } };
         RefreshProfiles(); LoadProfile();
         SetDetected(detectedGames ?? SafeFindGames());
-        var matching = (_detected.ItemsSource as IReadOnlyList<string>)?.FirstOrDefault(path => path == _folder.Text);
-        if (matching is not null) _detected.SelectedItem = matching;
-        if (string.IsNullOrWhiteSpace(_folder.Text) && _detected.ItemCount > 0) _detected.SelectedIndex = 0;
         UpdateLanguage();
     }
 
@@ -222,8 +217,9 @@ public sealed class MainWindow : Window
     private void LoadProfile()
     {
         var profile = _profiles.First(p => p.Id == _selectedId);
-        _name.Text = profile.Name; _website.Text = profile.Website; _folder.Text = profile.GamePath; _address.Text = profile.AddressOverride;
-        _report = null; _statusKey = "notChecked"; RenderReport();
+        _name.Text = profile.Name; _website.Text = profile.Website; _gamePath = profile.GamePath; _address.Text = profile.AddressOverride;
+        SetDetected(_detectedGames);
+        _report = null; RenderReport();
     }
     private LauncherProfile Draft(bool validate = false)
     {
@@ -233,7 +229,7 @@ public sealed class MainWindow : Window
             if (name.Length is < 1 or > 80) throw new InvalidOperationException(T("invalidName"));
             if (!Uri.TryCreate(website, UriKind.Absolute, out var uri) || uri.Scheme != "https" || uri.Port != 443 || uri.UserInfo.Length > 0 || uri.AbsolutePath != "/" || uri.Query.Length > 0 || uri.Fragment.Length > 0) throw new InvalidOperationException(T("invalidWebsite"));
         }
-        return new LauncherProfile(_selectedId!, name, website, (_folder.Text ?? "").Trim(), (_address.Text ?? "").Trim());
+        return new LauncherProfile(_selectedId!, name, website, _gamePath, (_address.Text ?? "").Trim());
     }
     private void CaptureDraft()
     {
@@ -262,24 +258,33 @@ public sealed class MainWindow : Window
     {
         try { return PlatformIntegration.FindGames(); } catch { return []; }
     }
-    private void SetDetected(IReadOnlyList<string> games) => _detected.ItemsSource = games.ToList();
+    private void SetDetected(IReadOnlyList<string> games)
+    {
+        var comparer = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
+        _detectedGames = games.Distinct(comparer).ToList();
+        var choices = _detectedGames.ToList();
+        if (_gamePath.Length > 0 && !choices.Contains(_gamePath, comparer)) choices.Insert(0, _gamePath);
+        _changingGames = true;
+        try
+        {
+            _detected.ItemsSource = choices;
+            var selected = choices.FirstOrDefault(path => comparer.Equals(path, _gamePath)) ?? choices.FirstOrDefault();
+            _detected.SelectedItem = selected;
+            _gamePath = selected ?? "";
+        }
+        finally { _changingGames = false; }
+    }
     private void DetectGames()
     {
         var games = SafeFindGames(); SetDetected(games);
-        if (games.Count > 0) _detected.SelectedIndex = 0; else AppendLog(UiText.Get("ru", "notFound"));
+        if (games.Count == 0) AppendLog(UiText.Get("ru", "notFound"));
     }
     private async Task BrowseAsync()
     {
         if (!StorageProvider.CanPickFolder) return;
         var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions { Title = T("gameFolder"), AllowMultiple = false });
-        if (folders.Count > 0) _folder.Text = folders[0].TryGetLocalPath() ?? _folder.Text;
-    }
-
-    private async Task SynchronizeAsync()
-    {
-        Draft(true);
-        if (await ConfirmAsync("syncTitle", "syncBody", _name.Text ?? ""))
-            await RunAsync("synced", async profile => await _service.SynchronizeAsync(profile, Token));
+        if (folders.Count > 0 && folders[0].TryGetLocalPath() is { } path)
+        { _gamePath = path; SetDetected(_detectedGames); _report = null; RenderReport(); }
     }
     private async Task RestoreAsync()
     {
@@ -290,7 +295,7 @@ public sealed class MainWindow : Window
     private async Task PlayAsync()
     {
         var connect = _connect.IsChecked == true;
-        await RunAsync("launched", async profile => { await _service.PlayAsync(profile, connect, Token); return null; });
+        await RunAsync("launched", async profile => await _service.PlayAsync(profile, connect, Token));
     }
     private async Task RunAsync(string resultKey, Func<LauncherProfile, Task<LauncherReport?>> action)
     {
@@ -302,9 +307,9 @@ public sealed class MainWindow : Window
         {
             var result = await Task.Run(() => action(profile));
             _report = result ?? (resultKey == "restored" ? null : _report);
-            _statusKey = resultKey; AppendLog(UiText.Get("ru", resultKey));
+            AppendLog(UiText.Get("ru", resultKey));
         }
-        catch (OperationCanceledException) { _statusKey = "cancelled"; AppendLog(UiText.Get("ru", "cancelled")); }
+        catch (OperationCanceledException) { AppendLog(UiText.Get("ru", "cancelled")); }
         catch (Exception error) { AppendLog(error.Message); await ShowErrorAsync(error.Message); }
         finally { _operation.Dispose(); _operation = null; SetBusy(false); RenderReport(); }
     }
@@ -314,13 +319,10 @@ public sealed class MainWindow : Window
         foreach (var control in _blocked) control.IsEnabled = !value;
         _cancel.IsEnabled = value; _progress.IsVisible = value; RenderReport();
     }
-    internal void PreviewReport(LauncherReport report) { _report = report; _statusKey = "checked"; RenderReport(); }
+    internal void PreviewReport(LauncherReport report) { _report = report; RenderReport(); }
     private void RenderReport()
     {
         _serverTitle.Text = _report?.Server.Title ?? (_name.Text?.Length > 0 ? _name.Text : T("welcome"));
-        _status.Text = _busy ? T("working") : _report is not null && _statusKey is "checked" or "synced"
-            ? T(_report.NeedsSync ? "needsSync" : _report.LocalGameVersion is null ? "unverified" : "ready") : T(_statusKey);
-        _details.Text = _report is null ? T("idleHint") : T("changed", _report.ChangedFiles, _report.TotalFiles);
         _serverGame.Text = _report?.Server.Game ?? "—";
         _localGame.Text = _report?.LocalGameVersion ?? T("unknown");
         _mod.Text = _report is null ? "—" : _report.Server.Mode == "vanilla" ? T("vanilla") : _report.Server.Mode == "plus" ? "V+ " + (_report.Server.Mod ?? "—") : T("modded");
@@ -391,7 +393,7 @@ public sealed class MainWindow : Window
         _website.Text = before; SetLanguage("en", false);
         if (!Equals(_connect.Content, UiText.Get("en", "connect")) || _website.Text != before) throw new Exception("Language switch did not preserve profile input");
         SetBusy(true);
-        if (_profile.IsEnabled || _name.IsEnabled || !_cancel.IsEnabled || !_progress.IsVisible) throw new Exception("Busy guard is incomplete");
+        if (_profile.IsEnabled || _name.IsEnabled || _detected.IsEnabled || !_cancel.IsEnabled || !_progress.IsVisible) throw new Exception("Busy guard is incomplete");
         SetBusy(false); SetLanguage("ru", false);
         if (!Equals(_connect.Content, UiText.Get("ru", "connect"))) throw new Exception("Language switch is not reversible");
         _address.Text = "override.example:2457";
@@ -399,6 +401,19 @@ public sealed class MainWindow : Window
         _address.Text = "";
         PreviewReport(originalReport);
         if (ConnectionAddress() != _report?.Server.Address || !_copyAddress.IsEnabled) throw new Exception("Published game address was not offered for copying");
+        var originalPath = _gamePath;
+        var manualPath = Path.Combine(Path.GetTempPath(), "Hearth-Manual-Selection");
+        _gamePath = manualPath; SetDetected([originalPath, originalPath]);
+        if (!Equals(_detected.SelectedItem, manualPath) || Draft().GamePath != manualPath || _detected.ItemCount != 2)
+            throw new Exception("The single game selector lost a manual selection or duplicated a Steam installation");
+        SaveProfile();
+        if (_persisted.Profiles.First(p => p.Id == _selectedId).GamePath != manualPath)
+            throw new Exception("The selected game folder was not saved in the profile");
+        SetDetected([]);
+        if (!Equals(_detected.SelectedItem, manualPath) || Draft().GamePath != manualPath)
+            throw new Exception("A Steam scan discarded the saved manual game folder");
+        _gamePath = originalPath; SetDetected([originalPath]); SaveProfile();
+        _logs.Clear(); RenderLogs(); PreviewReport(originalReport);
     }
     private sealed record ProfileChoice(string Id, string Name) { public override string ToString() => Name; }
 }

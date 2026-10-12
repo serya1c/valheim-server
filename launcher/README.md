@@ -2,7 +2,9 @@
 
 Native Windows x64 and Linux x64 desktop launcher for Steam Valheim and Hearth servers. The interface switches immediately between Russian and English. Server profiles contain the HTTPS Hearth website, Steam game folder, and an optional game address override.
 
-Opening the launcher reads local profiles and detects Steam folders. It does not contact a server, install mods, or launch Valheim. **Check collection** reads the selected server and checks client mod files. **Install / update mods** downloads and installs the published client collection with a backup. **Play** checks and, if needed, synchronizes mods before asking Steam to launch Valheim. The launcher does not update the game; Steam does. An unknown local game version is displayed as unknown.
+Opening the launcher reads local profiles and detects Steam folders. It does not contact a server, install mods, or launch Valheim. Select the game in **Found in Steam**; **Detect** repeats the search, and **Browse…** adds a directory manually. Save the profile to keep the selected directory for the next launch.
+
+Press **Play** to automatically check and, if needed, synchronize the selected server's mods before asking Steam to launch Valheim. Changed files are backed up; verified archives are cached, and an unchanged collection is left in place. The launcher does not update the game; Steam does. Reliable automatic comparison of the local game version is not provided in this version.
 
 The connection checkbox requests Steam's `+connect` launch argument; character selection and a server password can still require interaction in Valheim. **Copy game address** provides the profile override or the game address published by the landing page, for manual Join by IP. Restore returns files from the latest launcher installation backup, not world or character saves. Unmanaged mods are retained and may affect compatibility. Profiles using the same game directory share mod files and configurations.
 

@@ -8,9 +8,9 @@ The launcher saves your servers, checks installed mods, and starts Valheim throu
 
 1. Install Valheim in Steam. On Linux, use the **Windows game through Proton**.
 2. Download the launcher from your server's landing page. On Windows, open `Hearth-Launcher.exe`. On Linux, extract `Hearth-Launcher-Linux.tar.gz` and run `Hearth-Launcher` from the extracted directory.
-3. Select the detected Valheim directory, or browse for it. The directory must contain `valheim.exe` and `valheim_Data`.
+3. Select Valheim in **Found in Steam**. **Detect** repeats the search; **Browse…** lets you add a directory manually. The directory must contain `valheim.exe` and `valheim_Data`.
 4. Add the **HTTPS address of your Hearth website**, such as `https://loki.ach-play.ru`, and save the profile. Use the website root without an extra path, on the standard HTTPS port 443.
-5. Press **Check collection**, then **Play**. Close the game before changing mods.
+5. Close Valheim and press **Play**. The launcher automatically checks and, if needed, installs or updates the mods, then starts the game through Steam.
 
 Published builds include .NET and the launcher interface; no separate SDK, Python, or .NET installation is required. Windows x64 and desktop Linux x64 with Steam or Steam Flatpak are supported. Linux needs its normal desktop graphics libraries; Wayland uses XWayland.
 
@@ -40,11 +40,11 @@ Files are backed up before replacement. The launcher checks the server again bef
 
 Steam then starts Valheim. With **Connect to the selected server** enabled, the published `host:port` is passed to the game; the profile can override it. Character selection and passwords remain in the game. The launcher does not require the game password, and the API does not publish it. If the game does not proceed to the server, copy its address from the launcher and use **Join Game → Join IP**.
 
-Steam updates the game itself. The launcher displays the required server version and explicitly reports when it cannot reliably determine the local game version. Check that version in Valheim's menu before joining.
+Steam updates the game itself. **Server game** shows the required version. **Your game** currently shows **Unknown** because a reliable automatic check of the local Valheim version is not provided. If the game reports a version mismatch, check Steam updates and ask the administrator which game version the server uses.
 
 ## Multiple servers and vanilla
 
-A profile saves a name, website, game directory, and optional connection address. Domains are not tied to Loki: any Hearth server with a public HTTPS website can be added.
+A profile saves a name, website, the game directory selected in the list, and an optional connection address. After changing the selection, press **Save profile** to keep it for the next launch. Domains are not tied to Loki: any Hearth server with a public HTTPS website can be added.
 
 Profiles using the same game directory switch the managed mod collection and share configurations. A profile is not a separate copy of Valheim. Foreign DLLs outside the launcher's inventory are preserved and included in compatibility notes.
 

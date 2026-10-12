@@ -13,5 +13,5 @@ public interface ILauncherService
     Task<LauncherReport> InspectAsync(LauncherProfile profile, CancellationToken cancellationToken = default);
     Task<LauncherReport> SynchronizeAsync(LauncherProfile profile, CancellationToken cancellationToken = default);
     Task RestoreAsync(LauncherProfile profile, CancellationToken cancellationToken = default);
-    Task PlayAsync(LauncherProfile profile, bool connect, CancellationToken cancellationToken = default);
+    Task<LauncherReport> PlayAsync(LauncherProfile profile, bool connect, CancellationToken cancellationToken = default);
 }

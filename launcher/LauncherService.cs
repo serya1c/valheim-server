@@ -200,7 +200,7 @@ public sealed class LauncherService : ILauncherService
         finally { gate.Release(); }
     }
 
-    public async Task PlayAsync(LauncherProfile profile, bool connect, CancellationToken cancellationToken = default)
+    public async Task<LauncherReport> PlayAsync(LauncherProfile profile, bool connect, CancellationToken cancellationToken = default)
     {
         await gate.WaitAsync(cancellationToken);
         try
@@ -216,6 +216,7 @@ public sealed class LauncherService : ILauncherService
             if (connect && address.Length == 0) throw new IOException("Адрес подключения не задан. Укажите его в профиле сервера.");
             cancellationToken.ThrowIfCancellationRequested();
             await Task.Run(() => { Installer.ValidateCompatibility(game, latest.Mode, Installer.LoadInventory(game)); ensureGameClosed(); launchGame(game, address, latest.Mode == "vanilla", Write); }, cancellationToken);
+            return report with { Server = Snapshot(profile, Website(profile), latest) };
         }
         finally { gate.Release(); }
     }

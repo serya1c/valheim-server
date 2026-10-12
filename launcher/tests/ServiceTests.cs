@@ -118,6 +118,7 @@ public static class ServiceTests
         try
         {
             await Synchronization(root);
+            await AutomaticPlay(root);
             await BadPayloads(root);
             await PlusAndVanilla(root);
             await Compatibility(root);
@@ -169,6 +170,25 @@ public static class ServiceTests
         Check(net.Downloads == downloads + 1 && File.ReadAllBytes(cached).SequenceEqual(net.Bundle), "corrupt cached archive is reverified and replaced");
         net.ApiCalls = 0; net.SwitchAtApi = 2;
         await Reject(() => service.PlayAsync(profile, true), "server change immediately before launch blocks launch");
+    }
+
+    static async Task AutomaticPlay(string root)
+    {
+        string game = NewGame(root, "automatic-play"); var network = new Network();
+        var profile = new LauncherProfile("auto", "Automatic", "https://north.example", game);
+        int launches = 0;
+        var service = Service(Path.Combine(root, "automatic-play-state"), network, (_, address, vanilla, _) =>
+        {
+            if (address != "north.example:2456" || vanilla || Installer.LoadInventory(game)?.Files.Count != 4)
+                throw new Exception("Steam launch must follow complete mod synchronization");
+            launches++;
+        });
+        var report = await service.PlayAsync(profile, true);
+        Check(launches == 1 && network.Downloads == 1 && !report.NeedsSync && report.TotalFiles == 4 && report.Server.Title == "Northern Hearth",
+            "Play installs a fresh collection before launching and returns server information");
+        var repeated = await service.PlayAsync(profile, true);
+        Check(launches == 2 && network.Downloads == 1 && repeated.ChangedFiles == 0,
+            "repeated Play verifies the installed collection without downloading it again");
     }
 
     static async Task BadPayloads(string root)

@@ -35,7 +35,7 @@ internal static class GuiSmoke
             frame.Save(Path.GetFullPath(args[1]), new PngBitmapEncoderOptions());
         }
         window.Close();
-        Console.WriteLine("GUI smoke passed: RU/EN placeholders, literal paths, unsaved drafts, published/override addresses, busy guard, no service calls on startup.");
+        Console.WriteLine("GUI smoke passed: RU/EN, drafts, one game selector, saved/manual folders, addresses, busy guard, no service calls on startup.");
         return 0;
     }
 
@@ -47,6 +47,6 @@ internal static class GuiSmoke
         public Task<LauncherReport> InspectAsync(LauncherProfile profile, CancellationToken cancellationToken = default) { Calls++; Log?.Invoke("Демонстрация"); return Task.FromResult(Report()); }
         public Task<LauncherReport> SynchronizeAsync(LauncherProfile profile, CancellationToken cancellationToken = default) { Calls++; return Task.FromResult(Report()); }
         public Task RestoreAsync(LauncherProfile profile, CancellationToken cancellationToken = default) { Calls++; return Task.CompletedTask; }
-        public Task PlayAsync(LauncherProfile profile, bool connect, CancellationToken cancellationToken = default) { Calls++; return Task.CompletedTask; }
+        public Task<LauncherReport> PlayAsync(LauncherProfile profile, bool connect, CancellationToken cancellationToken = default) { Calls++; return Task.FromResult(Report()); }
     }
 }
