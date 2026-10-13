@@ -17,3 +17,7 @@
 .launcher-card .launcher-site{overflow-wrap:anywhere}
 
 .launcher-card details{margin-top:18px}.launcher-card summary{cursor:pointer;color:#ead5b2}.launcher-card .launcher-checksums a{overflow-wrap:anywhere}
+
+.ambient-music-mute{display:inline-grid;place-items:center;flex-shrink:0;width:32px;height:32px;padding:6px;border:1px solid #e4b47730;border-radius:50%;background:transparent;color:var(--amber);transition:background .2s,border-color .2s}.ambient-music-mute:hover{background:#e4b47710;border-color:#e4b47770}.ambient-music-mute svg{width:18px;height:18px}.ambient-music-silent{display:none}.ambient-music-mute[aria-pressed="true"] .ambient-music-sound{display:none}.ambient-music-mute[aria-pressed="true"] .ambient-music-silent{display:block}.ambient-music-mute[aria-pressed="true"]{color:var(--muted)}
+@media(max-width:650px){.nav{column-gap:10px}.ambient-music-mute{width:28px;height:28px;padding:5px}.ambient-music-mute svg{width:16px;height:16px}}
+@media(prefers-reduced-motion:reduce){.ambient-music-mute{transition:none}}
