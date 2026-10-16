@@ -9,9 +9,9 @@ namespace ValheimAdminRu
     [BepInPlugin("ru.valheim.adminpanel", "Админ-панель Valheim", ModVersion)]
     public sealed class Plugin : BaseUnityPlugin
     {
-        public const string ModVersion = "0.4.0";
-        public const string GameVersion = "1.0.17";
-        public static bool SupportsGameVersion(string version) => version == "1.0.16" || version == GameVersion;
+        public const string ModVersion = "0.4.1";
+        public const string GameVersion = GameCompatibility.BuildVersion;
+        public static bool SupportsGameVersion(string version) => GameCompatibility.Supports(version);
         public static Plugin Instance;
         public ManualLogSource Log => Logger;
         private string statusSource = "Подключение к серверной части мода…";
@@ -44,7 +44,7 @@ namespace ValheimAdminRu
             preview = new RadiusPreview();
             harmony = new Harmony("ru.valheim.adminpanel");
             harmony.PatchAll(typeof(Plugin).Assembly);
-            Logger.LogInfo("Админ-панель " + ModVersion + "; Valheim 1.0.16 и 1.0.17; сборка по библиотекам " + GameVersion + ".");
+            Logger.LogInfo("Админ-панель " + ModVersion + "; Valheim " + GameCompatibility.SupportedVersionsText + "; сборка по библиотекам " + GameVersion + ".");
             if (!SupportsGameVersion(global::Version.CurrentVersion.ToString()))
                 Logger.LogWarning("Версия игры отличается от проверенной: " + global::Version.CurrentVersion + ".");
         }

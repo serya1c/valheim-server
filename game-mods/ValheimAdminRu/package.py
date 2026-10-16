@@ -8,6 +8,12 @@ import zipfile
 root = Path(__file__).resolve().parent
 repo = root.parents[1]
 version = re.search(r'<Version>([^<]+)</Version>', (root / 'ValheimAdminRu.csproj').read_text()).group(1)
+compatibility = (root / 'src/GameCompatibility.cs').read_text(encoding='utf-8')
+games = re.findall(r'"([0-9]+\.[0-9]+\.[0-9]+)"',
+                   re.search(r'SupportedVersions\s*=\s*\{([^}]+)\}', compatibility).group(1))
+build_game = re.search(r'BuildVersion\s*=\s*"([^"]+)"', compatibility).group(1)
+if not games or build_game not in games or len(games) != len(set(games)):
+    raise SystemExit('Invalid supported game versions')
 dll = root / 'bin/Release/net48/ValheimAdminRu.dll'
 if not dll.is_file() or dll.read_bytes()[:2] != b'MZ':
     raise SystemExit('Build the plugin with build.ps1 first')
@@ -26,7 +32,7 @@ with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED, compressleve
         info.compress_type = zipfile.ZIP_DEFLATED
         info.external_attr = 0o100644 << 16
         archive.writestr(info, content)
-descriptor = {'id': 'Hearth-ValheimAdmin', 'version': version, 'games': ['1.0.16', '1.0.17'],
+descriptor = {'id': 'Hearth-ValheimAdmin', 'version': version, 'games': games,
               'sha256': hashlib.sha256(target.read_bytes()).hexdigest()}
 target.with_suffix('.json').write_text(json.dumps(descriptor, indent=2) + '\n', encoding='utf-8')
 print(json.dumps(descriptor))
