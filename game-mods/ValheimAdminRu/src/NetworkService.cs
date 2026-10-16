@@ -337,7 +337,7 @@ namespace ValheimAdminRu
                     state.Ready = false; state.Role = AdminRole.None; state.Permissions = AdminPermission.None;
                     state.Hammer = state.God = state.Flying = state.Building = false;
                     Result(rpc, 0, false, !Plugin.SupportsGameVersion(serverGame)
-                        ? "Версия Valheim на сервере " + serverGame + " не поддерживается модом. Поддерживаются 1.0.16 и " + Plugin.GameVersion + "."
+                        ? "Версия Valheim на сервере " + serverGame + " не поддерживается модом. Поддерживаются " + GameCompatibility.SupportedVersionsText + "."
                         : "Версии клиента и сервера должны совпадать. Требуются мод " + Plugin.ModVersion + " и Valheim " + serverGame
                             + " (версия сервера). На клиенте: мод " + clientMod + ", Valheim " + clientGame + ".");
                     return;
@@ -371,7 +371,7 @@ namespace ValheimAdminRu
                 int protocol = package.ReadInt();
                 string serverMod = package.ReadString(), serverGame = package.ReadString();
                 if (!Plugin.SupportsGameVersion(clientGame))
-                    throw new InvalidOperationException("Версия Valheim на клиенте " + clientGame + " не поддерживается модом. Поддерживаются 1.0.16 и " + Plugin.GameVersion + ".");
+                    throw new InvalidOperationException("Версия Valheim на клиенте " + clientGame + " не поддерживается модом. Поддерживаются " + GameCompatibility.SupportedVersionsText + ".");
                 if (protocol != ProtocolVersion || serverMod != Plugin.ModVersion || serverGame != clientGame)
                     throw new InvalidOperationException("Версии клиента и сервера должны совпадать. Требуются мод " + Plugin.ModVersion + " и Valheim " + clientGame
                         + " (версия клиента). На сервере: мод " + serverMod + ", Valheim " + serverGame + ".");

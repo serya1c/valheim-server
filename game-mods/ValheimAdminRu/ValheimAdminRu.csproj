@@ -4,7 +4,7 @@
     <AssemblyName>ValheimAdminRu</AssemblyName>
     <RootNamespace>ValheimAdminRu</RootNamespace>
     <LangVersion>latest</LangVersion>
-    <Version>0.4.0</Version>
+    <Version>0.4.1</Version>
     <GenerateDependencyFile>false</GenerateDependencyFile>
     <ValheimDir Condition="'$(ValheimDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimDir>
     <ManagedDir Condition="'$(ManagedDir)' == ''">$(ValheimDir)\valheim_Data\Managed</ManagedDir>

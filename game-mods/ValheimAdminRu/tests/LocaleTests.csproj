@@ -11,6 +11,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../src/Locale.cs" Link="Locale.cs" />
+    <Compile Include="../src/GameCompatibility.cs" Link="GameCompatibility.cs" />
     <Compile Include="LocaleTests.cs" />
   </ItemGroup>
 </Project>
