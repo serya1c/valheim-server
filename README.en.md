@@ -86,9 +86,9 @@ Download the **Hearth Launcher installer** from the landing page: it installs th
 
 Supported platforms are **Windows x64** and **Linux x64 / Steam Proton**, including Steam Flatpak. Steam updates the game; character selection and passwords remain in the game. Profiles using the same Valheim directory share its configurations. [First launch and limitations](docs/launcher.en.md).
 
-![Hearth Launcher: server profiles, collection checks, and game launch](docs/screenshots/launcher-en.jpg)
+![Hearth Launcher: server profiles, collection checks, and game launch](docs/screenshots/launcher-en.png)
 
-*Hearth Launcher 1.1.0 with demonstration data; no game was started.*
+*Hearth Launcher 1.1.1 with demonstration data; no game was started.*
 
 ### Manage players by SteamID
 

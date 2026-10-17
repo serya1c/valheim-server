@@ -84,9 +84,9 @@ docker compose up -d --build
 
 Поддерживаются **Windows x64** и **Linux x64 / Steam Proton**, в том числе Steam Flatpak. Саму игру обновляет Steam; персонажа и пароль выбираете в игре. Профили, использующие одну папку Valheim, разделяют её конфиги. [Первый запуск и ограничения](docs/launcher.ru.md).
 
-![Hearth Launcher: профили серверов, проверка сборки и запуск игры](docs/screenshots/launcher-ru.jpg)
+![Hearth Launcher: профили серверов, проверка сборки и запуск игры](docs/screenshots/launcher-ru.png)
 
-*Hearth Launcher 1.1.0; демонстрационные данные, без запуска игры.*
+*Hearth Launcher 1.1.1; демонстрационные данные, без запуска игры.*
 
 ### Модерация по SteamID
 

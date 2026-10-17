@@ -12,7 +12,7 @@ The source checks, builds, and Windows/Linux packaged GUI checks below are compl
 - Windows setup: 15 isolated installation checks pass, together with the build script's real setup-window and shortcut smoke checks. The packaged Windows launcher passes its GUI smoke check and actual RU/EN rendering; the Russian image was visually inspected. The final Linux portable TAR passes three consecutive GUI smoke launches as UID 1000 with networking disabled.
 - Seven Python launcher metadata/download/HTTP checks pass, covering all four actual downloadable payloads and their SHA-256 sidecars.
 - The GUI startup assertion accepts at least one completed inspection: Avalonia can deliver both Opened and a deferred text-change notification, particularly on Linux. These are read-only refreshes; readiness, rendered report, cancellation, and absence of mutations remain asserted. The final packages are rebuilt with this test correction.
-- Screenshots and historical 1.1.0 results below are unchanged.
+- Launcher RU/EN screenshots now show the actual 1.1.1 rendering with clearly labelled demonstration data, including a detected local game version. The previous JPG files and historical 1.1.0 validation records are retained.
 - Steam, Proton, and Valheim have not been launched to validate this patch in game.
 
 ## Version 1.1.0: automatic checks and installation
