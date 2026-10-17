@@ -59,6 +59,7 @@ public static class ServiceTests
         public byte[] Bundle = Zip(Full());
         public byte[]? SentBundle;
         public string Mode = "modded";
+        public string Game = "1.0.17";
         public string Mod = "0.11.0.0";
         public byte[] Base = [];
         public string? NextManifest;
@@ -67,7 +68,7 @@ public static class ServiceTests
         public int Downloads, Releases, ApiCalls, ExternalCalls;
         public string Api() => JsonSerializer.Serialize(new
         {
-            title = "Northern Hearth", mode = Mode, game = "1.0.17", mod = Mode == "plus" ? Mod : null,
+            title = "Northern Hearth", mode = Mode, game = Game, mod = Mode == "plus" ? Mod : null,
             address = "north.example:2456", community_url = "https://example.org/community", running = true, players = 3,
             client_mods = Mode == "vanilla" ? null : new
             {
@@ -119,6 +120,7 @@ public static class ServiceTests
         {
             await Synchronization(root);
             await ReadOnlyInspection(root);
+            await LocalGameVersion(root);
             await AutomaticPlay(root);
             await BadPayloads(root);
             await PlusAndVanilla(root);
@@ -190,6 +192,53 @@ public static class ServiceTests
         var repeated = await service.PlayAsync(profile, true);
         Check(launches == 2 && network.Downloads == 1 && repeated.ChangedFiles == 0,
             "repeated Play verifies the installed collection without downloading it again");
+    }
+
+    static async Task LocalGameVersion(string root)
+    {
+        string game = NewGame(root, "game-version"), state = Path.Combine(root, "game-version-state");
+        string assembly = Path.Combine(game, "valheim_Data", "Managed", "assembly_valheim.dll");
+        Directory.CreateDirectory(Path.GetDirectoryName(assembly)!);
+        File.WriteAllBytes(assembly, GameVersionTests.Assembly(1, 0, 20));
+        var original = (Installer.Hash(assembly), File.GetLastWriteTimeUtc(assembly));
+        var network = new Network { Game = "1.0.20" }; int launches = 0;
+        var service = Service(state, network, (_, _, _, _) => launches++);
+        var profile = new LauncherProfile("version", "Version", "https://north.example", game);
+        var inspected = await service.InspectAsync(profile);
+        Check(inspected.LocalGameVersion == "1.0.20" && inspected.Server.Game == "1.0.20"
+            && !inspected.Notes.Any(n => n.StartsWith("Версия установленной игры", StringComparison.Ordinal)),
+            "inspection reads actual selected game metadata without an unknown-version note");
+        Check(!Directory.Exists(state) && network.Downloads == 0 && launches == 0
+            && original == (Installer.Hash(assembly), File.GetLastWriteTimeUtc(assembly)),
+            "version inspection is read-only and requires no game launch or archive download");
+        network.Game = "1.0.17";
+        Check((await service.InspectAsync(profile)).Notes.Any(n => n.StartsWith("Версия вашей игры отличается", StringComparison.Ordinal)),
+            "a confirmed game mismatch suggests Steam update or matching branch");
+        network.Game = "1.0.20";
+        string inventory = Path.Combine(game, ".hearth-launcher", "inventory.json");
+        Directory.CreateDirectory(Path.GetDirectoryName(inventory)!); File.WriteAllText(inventory, "broken metadata");
+        var failed = await service.InspectAsync(profile);
+        Check(failed.ClientState == ClientCollectionState.CheckFailed && failed.LocalGameVersion == "1.0.20"
+            && failed.Server.Title == "Northern Hearth" && failed.ClientCheckError is not null,
+            "a mod inventory error preserves separately read local version and server cards");
+        File.Delete(inventory);
+        foreach (string mode in new[] { "vanilla", "modded", "plus" })
+        {
+            network.Mode = mode;
+            Check((await service.InspectAsync(profile)).LocalGameVersion == "1.0.20", "game version is independent of server mode: " + mode);
+        }
+        network.Mode = "modded";
+        var played = await service.PlayAsync(profile, true);
+        Check(played.LocalGameVersion == "1.0.20" && launches == 1 && !played.NeedsSync,
+            "Play returns the detected game version after synchronization and the launch callback");
+        Check(original == (Installer.Hash(assembly), File.GetLastWriteTimeUtc(assembly)),
+            "mod synchronization and Play do not modify the game assembly used for version detection");
+        File.WriteAllText(assembly, "Steam is replacing the assembly");
+        var unreadable = await service.InspectAsync(profile);
+        Check(unreadable.LocalGameVersion is null && unreadable.Server.Game == "1.0.20" && !unreadable.NeedsSync
+            && unreadable.Notes.Any(n => n.StartsWith("Версия установленной игры", StringComparison.Ordinal))
+            && !unreadable.Notes.Any(n => n.StartsWith("Версия вашей игры отличается", StringComparison.Ordinal)),
+            "unknown metadata is not replaced by the server version or treated as a confirmed mismatch");
     }
 
     static async Task ReadOnlyInspection(string root)

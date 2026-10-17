@@ -115,6 +115,7 @@ public static class UiText
         ["Версии или набор модов сервера изменились во время загрузки. Повторите синхронизацию."] = "The server versions or mod collection changed during download. Synchronize again.",
         ["Версия DLL в архиве не совпадает с сервером."] = "The DLL version in the archive does not match the server.",
         ["Версия установленной игры не определена. Обновление Valheim выполняет Steam."] = "The installed game version is unknown. Steam updates Valheim.",
+        ["Версия вашей игры отличается от версии сервера. Обновите Valheim в Steam или выберите ту же ветку игры, что и сервер."] = "Your game version differs from the server. Update Valheim in Steam or select the same game branch as the server.",
         ["Все файлы модов проверены. Синхронизация не требуется."] = "All mod files have been checked. Synchronization is not needed.",
         ["Выберите папку Steam-версии Valheim."] = "Choose the Steam Valheim folder.",
         ["Выберите папку Steam-версии Valheim: нужны valheim.exe и valheim_Data."] = "Choose the Steam Valheim folder containing valheim.exe and valheim_Data.",

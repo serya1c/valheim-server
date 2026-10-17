@@ -18,9 +18,9 @@ The installer does not need administrator rights. The Windows EXE is currently u
 
 ## Automatic checks
 
-Opening the launcher with a saved profile, selecting a server, or choosing the game directory automatically refreshes the cards on the right. The launcher reads the server status and versions and checks managed client collection files. The check compares the local inventory and managed file hashes; it does not download mod archives or modify game files. A new directory without a launcher-managed collection is marked as needing installation. **Play** repairs a damaged or outdated collection. The check does not start Steam or Valheim.
+Opening the launcher with a saved profile, selecting a server, or choosing the game directory automatically refreshes the cards on the right. The launcher reads the server status and versions, reads the game version from the selected directory, and checks managed client collection files. The check compares the local inventory and managed file hashes; it does not download mod archives or modify game files. A new directory without a launcher-managed collection is marked as needing installation. **Play** repairs a damaged or outdated collection. The check does not start Steam or Valheim.
 
-If the website is unavailable or no directory has been chosen yet, the interface explains what needs to be configured. The local game version is still not detected; Steam updates the game.
+If the website is unavailable or no directory has been chosen yet, the interface explains what needs to be configured. If the selected game's version cannot be read, Your game shows Unknown; Steam updates Valheim.
 
 ## Linux and Proton
 
@@ -48,7 +48,11 @@ Files are backed up before replacement. The launcher checks the server again bef
 
 Steam then starts Valheim. With **Connect to the selected server** enabled, the published `host:port` is passed to the game; the profile can override it. Character selection and passwords remain in the game. The launcher does not require the game password, and the API does not publish it. If the game does not proceed to the server, copy its address from the launcher and use **Join Game → Join IP**.
 
-Steam updates the game itself. **Server game** shows the required version. **Your game** currently shows **Unknown** because a reliable automatic check of the local Valheim version is not provided. If the game reports a version mismatch, check Steam updates and ask the administrator which game version the server uses.
+Steam updates the game itself. **Server game** shows the required version; **Your game** shows the version from the selected Valheim installation. Automatic checks read it, and the report retains it after Play in every server mode, including vanilla. A mod collection error does not hide an already detected game version.
+
+The launcher reads `valheim_Data/Managed/assembly_valheim.dll` without starting the game or executing the DLL. Windows and Steam Proton installations use the same file. A missing, unreadable, damaged, or unrecognized file is shown as **Unknown**. The Unity EXE version, Steam build ID, and old logs are not substituted for the Valheim version.
+
+A version mismatch adds advice to check Steam updates and the selected game branch. It does not block Play: the launcher does not update or downgrade the game itself. Ask the server administrator which game version to use.
 
 ## Multiple servers and vanilla
 

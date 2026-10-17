@@ -10,6 +10,7 @@
   <ItemGroup>
     <Compile Include="../Contracts.cs" Link="Contracts.cs" />
     <Compile Include="../Engine/Core.cs" Link="Engine/Core.cs" />
+    <Compile Include="../Engine/GameVersionReader.cs" Link="Engine/GameVersionReader.cs" />
     <Compile Include="../LauncherService.cs" Link="LauncherService.cs" />
     <Compile Include="../ProfileStore.cs" Link="ProfileStore.cs" />
     <Compile Include="../PlatformIntegration.cs" Link="PlatformIntegration.cs" />

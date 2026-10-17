@@ -10,7 +10,7 @@ import shutil
 import tarfile
 import zipfile
 
-LAUNCHER_VERSION = "1.1.0"
+LAUNCHER_VERSION = "1.1.1"
 ASSET_NAMES = ("Hearth-Launcher.exe", "Hearth-Launcher-Windows-x64.zip", "Hearth-Launcher-Linux.tar.gz",
                "Hearth-Launcher-Setup.exe", "Hearth-Launcher-Install-Linux.sh")
 

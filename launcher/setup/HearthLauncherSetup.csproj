@@ -5,7 +5,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable>
-    <AssemblyName>Hearth-Launcher-Setup</AssemblyName><Version>1.1.0</Version>
+    <AssemblyName>Hearth-Launcher-Setup</AssemblyName><Version>1.1.1</Version>
     <ApplicationIcon>../Assets/hearth.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained>

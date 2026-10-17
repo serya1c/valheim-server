@@ -141,7 +141,7 @@ contents "$stage"
 [[ $(head -c 4 "$stage/Hearth-Launcher" | od -An -tx1 | tr -d ' \n') == 7f454c46 ]] || fail 'Missing Linux executable.'
 chmod 755 "$stage/Hearth-Launcher"
 chmod 644 "$stage/hearth.png" "$stage/README.md"
-printf '%s\n%s\n' "$signature" '1.1.0' > "$stage/$marker"
+printf '%s\n%s\n' "$signature" '1.1.1' > "$stage/$marker"
 # Keep only the script header; the installed uninstaller never needs the 40 MB payload.
 awk '/^__HEARTH_PAYLOAD__$/ {exit} {print}' "$0" | sed 's/^mode=${1:---install}$/mode=--uninstall/' > "$stage/uninstall.sh"
 chmod 755 "$stage/uninstall.sh"
@@ -185,7 +185,7 @@ command -v gio >/dev/null && gio set "$desktop/Hearth Launcher.desktop" metadata
 command -v update-desktop-database >/dev/null && update-desktop-database "$menu" >/dev/null 2>&1 || true
 committed=1
 [[ ! -d "$previous" ]] || remove_owned "$previous"
-printf 'Hearth Launcher 1.1.0 installed: %s\nDesktop and application-menu shortcuts created.\nУстановка завершена. Ярлыки созданы.\n' "$target"
+printf 'Hearth Launcher 1.1.1 installed: %s\nDesktop and application-menu shortcuts created.\nУстановка завершена. Ярлыки созданы.\n' "$target"
 printf 'If your desktop asks, choose Allow Launching. / Если нужно, разрешите запуск ярлыка.\n'
 printf 'Uninstall: bash "%s/uninstall.sh"\n' "$target"
 exit 0

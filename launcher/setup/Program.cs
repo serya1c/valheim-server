@@ -92,8 +92,8 @@ sealed class SetupForm : Form
         Text = English ? "Hearth Launcher — Setup" : "Hearth Launcher — Установка";
         heading.Text = "HEARTH LAUNCHER";
         description.Text = English
-            ? "Install Hearth Launcher 1.1.0 for this Windows user. Desktop and Start menu shortcuts will be created. Reinstall to update; server profiles remain."
-            : "Установите Hearth Launcher 1.1.0 для текущего пользователя Windows. Появятся ярлыки на рабочем столе и в меню «Пуск». Повторная установка обновит лаунчер; профили сохранятся.";
+            ? "Install Hearth Launcher 1.1.1 for this Windows user. Desktop and Start menu shortcuts will be created. Reinstall to update; server profiles remain."
+            : "Установите Hearth Launcher 1.1.1 для текущего пользователя Windows. Появятся ярлыки на рабочем столе и в меню «Пуск». Повторная установка обновит лаунчер; профили сохранятся.";
         destination.Text = (English ? "Installation folder: " : "Папка установки: ") + paths.Directory;
         launch.Text = English ? "Open launcher after installation" : "Открыть лаунчер после установки";
         install.Text = completed ? (English ? "Close" : "Закрыть") : (English ? "Install" : "Установить");
@@ -177,7 +177,7 @@ sealed class SetupForm : Form
             if (!register) return;
             using RegistryKey key = Registry.CurrentUser.CreateSubKey(registryPath);
             changedRegistration = true;
-            key.SetValue("DisplayName", "Hearth Launcher"); key.SetValue("DisplayVersion", "1.1.0");
+            key.SetValue("DisplayName", "Hearth Launcher"); key.SetValue("DisplayVersion", "1.1.1");
             key.SetValue("Publisher", "Hearth project"); key.SetValue("InstallLocation", locations.Directory);
             key.SetValue("DisplayIcon", Path.Combine(locations.Directory, "hearth.ico"));
             string powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell/v1.0/powershell.exe");
