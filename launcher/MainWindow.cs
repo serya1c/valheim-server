@@ -121,7 +121,7 @@ public sealed class MainWindow : Window
         identity.Children.Add(Row(detect, browse));
         identity.Children.Add(Field("endpoint", _address, "endpointHint"));
         identity.Children.Add(saveButton);
-        identity.Children.Add(new TextBlock { Text = "HEARTH LAUNCHER · 1.1.0", FontSize = 10, Foreground = Muted, Margin = new Thickness(0, 20, 0, 0) });
+        identity.Children.Add(new TextBlock { Text = "HEARTH LAUNCHER · 1.1.1", FontSize = 10, Foreground = Muted, Margin = new Thickness(0, 20, 0, 0) });
         var sidebar = new Border { Background = PanelInk, BorderBrush = Line, BorderThickness = new Thickness(0, 0, 1, 0), Padding = new Thickness(24), Child = new ScrollViewer { Content = identity } };
 
         var body = new StackPanel { Spacing = 16, Margin = new Thickness(28, 24) };
@@ -484,6 +484,20 @@ public sealed class MainWindow : Window
         _address.Text = "";
         PreviewReport(originalReport);
         if (ConnectionAddress() != _report?.Server.Address || !_copyAddress.IsEnabled) throw new Exception("Published game address was not offered for copying");
+        const string mismatchNote = "Версия вашей игры отличается от версии сервера. Обновите Valheim в Steam или выберите ту же ветку игры, что и сервер.";
+        PreviewReport(originalReport with { LocalGameVersion = "1.0.20", Notes = [mismatchNote], ClientState = ClientCollectionState.CheckFailed });
+        SetLanguage("en", false);
+        if (_localGame.Text != "1.0.20" || !_notes.Text!.Contains("Your game version differs from the server.", StringComparison.Ordinal))
+            throw new Exception("Detected version or its mismatch note was lost during English rendering or a client check failure");
+        SetLanguage("ru", false);
+        if (_localGame.Text != "1.0.20" || !_notes.Text!.Contains(mismatchNote, StringComparison.Ordinal)
+            || _notes.Text.Contains("Версия установленной игры не определена", StringComparison.Ordinal))
+            throw new Exception("Known game version rendered an unknown message or failed to switch back to Russian");
+        PreviewReport(originalReport with { LocalGameVersion = null, Notes = [] });
+        SetLanguage("en", false);
+        if (_localGame.Text != UiText.Get("en", "unknown") || !_notes.Text!.Contains(UiText.Get("en", "unknownVersionNote"), StringComparison.Ordinal))
+            throw new Exception("Unknown game metadata did not preserve its translated fallback");
+        SetLanguage("ru", false); PreviewReport(originalReport);
         var originalPath = _gamePath;
         var originalGames = _detectedGames;
         var manualPath = Path.Combine(Path.GetTempPath(), "Hearth-Manual-Selection");

@@ -44,7 +44,7 @@ class LauncherHttpTests(unittest.TestCase):
         status, _, body = self.get('/api/public')
         self.assertEqual(status, 200)
         metadata = json.loads(body)['launcher']
-        self.assertEqual(metadata['version'], '1.1.0')
+        self.assertEqual(metadata['version'], '1.1.1')
         for platform in ('windows', 'linux', 'windows_portable', 'linux_portable'):
             artifact = metadata[platform]
             status, headers, payload = self.get(artifact['url'])

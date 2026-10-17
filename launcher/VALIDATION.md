@@ -1,5 +1,20 @@
 # Hearth Launcher — validation
 
+## Version 1.1.1: local game version detection — 2026-10-17
+
+The source checks, builds, and Windows/Linux packaged GUI checks below are complete.
+
+- The local-version reader inspects PE metadata and IL in the selected Windows/Proton installation's `valheim_Data/Managed/assembly_valheim.dll`; it follows `Version.get_CurrentVersion` to its backing-field initializer without loading or executing game code. It does not substitute the Unity executable version, Steam build ID, or log contents.
+- Service and GUI checks cover the detected version in vanilla, BepInEx, and Plus reports, preservation after Play and on client-collection errors, Unknown for unavailable or unrecognized files, and known/mismatched/unknown rendering in RU/EN. A client/server version mismatch is advisory; Steam remains responsible for game updates and branch selection.
+- Windows: 90 platform, 33 game-version, and 70 service checks pass. Linux: 92 platform, 34 game-version, and 73 service checks pass as UID 1000 in an SDK container with networking disabled. Disposable PE fixtures are inspected as data and never executed.
+- The actual installed Valheim assembly reports **1.0.20** on Windows and Linux; Linux reads the same DLL through a read-only bind mount. This checks version detection, not game execution or Steam/Proton connectivity.
+- SDK **10.0.402**, Avalonia **12.1.4**: locked restore and Release build pass with zero warnings/errors; self-contained Windows/Linux targets and the Windows setup are published. Both lock files update the SDK-provided `Microsoft.NET.ILLink.Tasks` from **10.0.12** to **10.0.13**.
+- Windows setup: 15 isolated installation checks pass, together with the build script's real setup-window and shortcut smoke checks. The packaged Windows launcher passes its GUI smoke check and actual RU/EN rendering; the Russian image was visually inspected. The final Linux portable TAR passes three consecutive GUI smoke launches as UID 1000 with networking disabled.
+- Seven Python launcher metadata/download/HTTP checks pass, covering all four actual downloadable payloads and their SHA-256 sidecars.
+- The GUI startup assertion accepts at least one completed inspection: Avalonia can deliver both Opened and a deferred text-change notification, particularly on Linux. These are read-only refreshes; readiness, rendered report, cancellation, and absence of mutations remain asserted. The final packages are rebuilt with this test correction.
+- Screenshots and historical 1.1.0 results below are unchanged.
+- Steam, Proton, and Valheim have not been launched to validate this patch in game.
+
 ## Version 1.1.0: automatic checks and installation
 
 - Read-only startup, profile/website and Steam/manual-folder inspection. Server metadata remains visible if the client folder or inventory has an error; no folder, setup, update/repair, ready, vanilla and failed states are distinct. Inspections read actual managed-file SHA-256 values, preserve user configurations, do not download archives or change game files, and support cancellation.

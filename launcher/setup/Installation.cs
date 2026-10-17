@@ -59,7 +59,7 @@ public static class Installation
                 throw new InvalidDataException("The Windows launcher executable is missing.");
             // Windows PowerShell 5.1 needs a BOM to read the bilingual UTF-8 script.
             File.WriteAllBytes(Path.Combine(stage, "uninstall.ps1"), [0xEF, 0xBB, 0xBF, .. uninstall]);
-            File.WriteAllText(Path.Combine(stage, Marker), JsonSerializer.Serialize(new { product = Product, version = "1.1.0" }), new UTF8Encoding(false));
+            File.WriteAllText(Path.Combine(stage, Marker), JsonSerializer.Serialize(new { product = Product, version = "1.1.1" }), new UTF8Encoding(false));
             NoLinks(target);
             if (Directory.Exists(target))
             {

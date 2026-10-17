@@ -50,15 +50,18 @@ public sealed class LauncherService : ILauncherService
             var version = await source.Server(cancellationToken);
             return await Task.Run(() =>
             {
+                string? game = null;
+                LauncherReport? summary = null;
                 try
                 {
-                    string? game = string.IsNullOrWhiteSpace(profile.GamePath) ? null : Game(profile);
-                    return Report(profile, website, game, version, cancellationToken: cancellationToken);
+                    game = string.IsNullOrWhiteSpace(profile.GamePath) ? null : Game(profile);
+                    summary = Summary(profile, website, game, version, cancellationToken);
+                    return Report(profile, website, game, version, cancellationToken: cancellationToken, summary: summary);
                 }
                 catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException or UnauthorizedAccessException)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    return Report(profile, website, null, version, cancellationToken: cancellationToken) with
+                    return (summary ?? Summary(profile, website, game, version, cancellationToken)) with
                     { ClientState = ClientCollectionState.CheckFailed, ClientCheckError = error.Message, NeedsSync = true };
                 }
             }, cancellationToken);
@@ -66,22 +69,31 @@ public sealed class LauncherService : ILauncherService
         finally { gate.Release(); }
     }
 
-    static LauncherReport Report(LauncherProfile profile, string website, string? game, ServerVersion version,
-        int? changes = null, int? total = null, CancellationToken cancellationToken = default)
+    static LauncherReport Summary(LauncherProfile profile, string website, string? game, ServerVersion version, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var notes = new List<string> { "Версия установленной игры не определена. Обновление Valheim выполняет Steam." };
+        string? localVersion = game is null ? null : GameVersionReader.Read(game, cancellationToken);
+        var notes = new List<string>();
+        if (localVersion is null) notes.Add("Версия установленной игры не определена. Обновление Valheim выполняет Steam.");
+        else if (localVersion != version.Game) notes.Add("Версия вашей игры отличается от версии сервера. Обновите Valheim в Steam или выберите ту же ветку игры, что и сервер.");
         if (!version.Running) notes.Add("Сервер сейчас остановлен.");
         if (!OperatingSystem.IsWindows()) notes.Add("Для модов включите Proton и один раз задайте в Steam: WINEDLLOVERRIDES=\"winhttp=n,b\" %command%.");
         notes.Add("Профили используют общую папку игры и общие конфигурации модов.");
+        return new(Snapshot(profile, website, version), 0, 0, version.Mode != "vanilla", localVersion, notes);
+    }
+
+    static LauncherReport Report(LauncherProfile profile, string website, string? game, ServerVersion version,
+        int? changes = null, int? total = null, CancellationToken cancellationToken = default, LauncherReport? summary = null)
+    {
+        var report = summary ?? Summary(profile, website, game, version, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        var notes = report.Notes.ToList();
         if (game is null)
-            return new(Snapshot(profile, website, version), 0, 0, version.Mode != "vanilla", null, notes)
-            { ClientState = ClientCollectionState.FolderRequired };
+            return report with { ClientState = ClientCollectionState.FolderRequired };
         if (version.Mode == "vanilla")
         {
             notes.Add("Ванильный режим не меняет файлы. Загрузчик модов отключается только для этого запуска.");
-            return new(Snapshot(profile, website, version), 0, 0, false, null, notes)
-            { ClientState = ClientCollectionState.NotRequired };
+            return report with { NeedsSync = false, ClientState = ClientCollectionState.NotRequired, Notes = notes };
         }
         Installer.EnsureRecovered(game);
         var inventory = Installer.LoadInventory(game);
@@ -91,9 +103,9 @@ public sealed class LauncherService : ILauncherService
             && inventory.Mode == version.Mode && different == 0;
         if (ForeignPlugins(game, inventory, cancellationToken)) notes.Add("Найдены моды вне учёта лаунчера. Они сохраняются и могут влиять на совместимость.");
         if (!matches) notes.Add("Моды предоставлены выбранным сервером и выполняются на вашем компьютере.");
-        return new(Snapshot(profile, website, version), changes ?? different, total ?? inventory?.Files.Count ?? 0,
-            !matches, null, notes)
-        { ClientState = inventory is null ? ClientCollectionState.InstallRequired : matches ? ClientCollectionState.Ready : ClientCollectionState.UpdateRequired };
+        return report with { ChangedFiles = changes ?? different, TotalFiles = total ?? inventory?.Files.Count ?? 0,
+            NeedsSync = !matches, Notes = notes,
+            ClientState = inventory is null ? ClientCollectionState.InstallRequired : matches ? ClientCollectionState.Ready : ClientCollectionState.UpdateRequired };
     }
 
     static bool ForeignPlugins(string game, InstallationInventory? inventory, CancellationToken cancellationToken = default)

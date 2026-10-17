@@ -1,10 +1,12 @@
-# Hearth Launcher 1.1.0
+# Hearth Launcher 1.1.1
 
 Native Windows x64 and Linux x64 desktop launcher for Steam Valheim and Hearth servers. The interface switches immediately between Russian and English. Server profiles contain the HTTPS Hearth website, Steam game folder, and an optional game address override.
 
 Opening the launcher reads local profiles, detects Steam folders, and automatically refreshes the server's information. Selecting a game directory also checks its client collection. These checks inspect metadata and files; mod installation happens when you press **Play**. Select the game in **Found in Steam**; **Detect** repeats the search, and **Browse…** adds a directory manually. Save the profile to keep the selected directory for the next launch.
 
-Press **Play** to automatically check and, if needed, synchronize the selected server's mods before asking Steam to launch Valheim. Changed files are backed up; verified archives are cached, and an unchanged collection is left in place. The launcher does not update the game; Steam does. Reliable automatic comparison of the local game version is not provided in this version.
+Press **Play** to automatically check and, if needed, synchronize the selected server's mods before asking Steam to launch Valheim. Changed files are backed up; verified archives are cached, and an unchanged collection is left in place. The launcher does not update the game; Steam does. **Your game** shows the version read from the selected installation in all server modes, including after Play and when a mod collection check fails. A mismatch with **Server game** adds advice to check Steam updates and the selected game branch; it does not block Play.
+
+The local version comes from `valheim_Data/Managed/assembly_valheim.dll`, the same file used by Windows and Steam Proton installations. The reader inspects PE metadata and IL: the global `Version.get_CurrentVersion` getter identifies its backing field, and its initializer supplies the `GameVersion` value. It does not load or execute the assembly. Missing, unreadable, damaged, or unrecognized data is shown as **Unknown**; Unity executable versions, Steam build IDs, and old logs are not used as substitutes.
 
 The connection checkbox requests Steam's `+connect` launch argument; character selection and a server password can still require interaction in Valheim. **Copy game address** provides the profile override or the game address published by the landing page, for manual Join by IP. Restore returns files from the latest launcher installation backup, not world or character saves. Unmanaged mods are retained and may affect compatibility. Profiles using the same game directory share mod files and configurations.
 
@@ -30,7 +32,7 @@ Profiles are stored under `%LOCALAPPDATA%/HearthLauncher` on Windows, or `$XDG_S
 
 ## Building from source
 
-Developers need the .NET 10 SDK and Python 3.9+ for packaging. The initial build used SDK 10.0.401 and the official NuGet registry. Avalonia, Desktop, Fluent, and Headless are pinned to **12.1.4**; `packages.lock.json` is committed. Build scripts use a local NuGet cache and CLI home, perform a locked restore, compile, run the headless GUI smoke check, and cross-publish both self-contained x64 targets. Run from any directory:
+Developers need the .NET 10 SDK and Python 3.9+ for packaging. Version 1.1.1 was built with SDK 10.0.402 and the official NuGet registry. This SDK updates its implicit ILLink.Tasks dependency from 10.0.12 to 10.0.13 in both lock files; locked restore was verified with this SDK. Avalonia, Desktop, Fluent, and Headless are pinned to **12.1.4**; `packages.lock.json` is committed. Build scripts use a local NuGet cache and CLI home, perform a locked restore, compile, run the headless GUI smoke check, and cross-publish both self-contained x64 targets. Run from any directory:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File launcher/build.ps1
