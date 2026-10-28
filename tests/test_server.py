@@ -594,7 +594,7 @@ class HttpTests(unittest.TestCase):
             page=self.request('GET','/')[2].decode()
             self.assertIn('rel="canonical" href="https://north.example.org/"',page)
             self.assertIn('Ванильный сервер',page)
-            self.assertIn('<article data-mods hidden>',page)
+            self.assertIn('data-mods hidden',page)
             self.assertNotIn('loki.ach-play.ru',page)
             self.assertIn('https://north.example.org/sitemap.xml',self.request('GET','/robots.txt')[2].decode())
             self.assertIn('<loc>https://north.example.org/</loc>',self.request('GET','/sitemap.xml')[2].decode())

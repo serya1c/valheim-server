@@ -15,6 +15,7 @@ import secrets
 import shutil
 import signal
 import sqlite3
+import release_storage
 import stat
 import subprocess
 import tarfile
@@ -267,6 +268,28 @@ class Manager:
 
     def save_state(self):
         atomic_json(self.state_path, self.state)
+
+    def prune_releases(self):
+        if self.closing:
+            return
+        try:
+            if self.running():
+                args = self.proc.args
+                if not isinstance(args, (list, tuple)) or not args or not isinstance(args[0], (str, os.PathLike)):
+                    return
+                live = Path(args[0]).resolve().parent
+                if live.parent != (self.base / 'releases').resolve() or live.name not in {self.state.get('active'), self.state.get('previous')}:
+                    return
+            deleted = release_storage.prune_releases(self.base, self.state)
+            if deleted:
+                message = f'Удалены старые установки сервера: {len(deleted)}. Текущая версия и версия для отката сохранены.'
+                self.say(message)
+                self.store.event('system', message)
+        except Exception as error:
+            # Storage housekeeping must never turn a successful operation into
+            # an update/rollback failure, even when its log cannot be written.
+            with contextlib.suppress(Exception):
+                self.say('Очистка старых установок не завершена: ' + str(error))
 
     def spawn(self, folder, save_dir, port, probe=False, mode=None):
         env = os.environ.copy()
@@ -800,8 +823,13 @@ class Manager:
                         with contextlib.suppress(OSError):
                             Path(data['path']).unlink(missing_ok=True)
                 finally:
-                    self.busy = False
-                    self.lock.release()
+                    try:
+                        # No staged update is in flight here; keep the mutation
+                        # lock until cleanup finishes, including startup/recovery.
+                        self.prune_releases()
+                    finally:
+                        self.busy = False
+                        self.lock.release()
         try:
             threading.Thread(target=work, daemon=True).start()
         except Exception:
