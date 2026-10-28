@@ -1,5 +1,5 @@
 'use strict';
-const MOD_SECTIONS_RU={ValheimPlus:'Valheim Plus',AdvancedBuildingMode:'Расширенное строительство',AdvancedEditingMode:'Расширенное редактирование',Bed:'Кровати',Beehive:'Ульи',Building:'Строительство',Camera:'Камера',Experience:'Опыт навыков',Fermenter:'Бродильная бочка',FireSource:'Источники огня',Food:'Еда',Smelter:'Плавильня',Furnace:'Доменная печь',Game:'Общие правила игры',Hotkeys:'Горячие клавиши',Items:'Предметы',Hud:'Игровой интерфейс',Gathering:'Добыча ресурсов',Pickable:'Сбор предметов',Durability:'Прочность',Armor:'Броня',Kiln:'Углевыжигательная печь',Map:'Карта',Player:'Персонаж',Server:'Сервер',Stamina:'Выносливость',StaminaUsage:'Расход выносливости',EitrUsage:'Расход эйтра',HealthUsage:'Расход здоровья',StructuralIntegrity:'Устойчивость и повреждения построек',Ward:'Обереги',Workbench:'Верстак',Wagon:'Телега',Inventory:'Инвентарь и хранилища',FreePlacementRotation:'Свободное вращение',Shields:'Щиты',FirstPerson:'Вид от первого лица',GridAlignment:'Выравнивание по сетке',CraftFromChest:'Изготовление из сундуков',Windmill:'Мельница',SpinningWheel:'Прялка',EitrRefinery:'Очиститель эйтра',PlayerProjectile:'Снаряды игрока',MonsterProjectile:'Снаряды противников',Tameable:'Приручение',Procreation:'Размножение животных',GameClock:'Игровые часы',Brightness:'Яркость',Chat:'Чат',LootDrop:'Выпадение добычи',WispSpawner:'Источники огоньков',Demister:'Рассеивание тумана',HotTub:'Горячая купель',ShieldGenerator:'Генератор щита',Turret:'Баллиста',AutoStack:'Автоматическая укладка',Oven:'Каменная печь',SapCollector:'Сборщик сока',Time:'Время суток',Ship:'Корабли',Egg:'Яйца',FrigidKiln:'Морозная печь',FrostFoundry:'Ледяная плавильня'};
+const MOD_SECTIONS_RU={ValheimPlus:'Valheim Plus',AdvancedBuildingMode:'Расширенное строительство',AdvancedEditingMode:'Расширенное редактирование',Bed:'Кровати',Beehive:'Ульи',Building:'Строительство',Camera:'Камера',Experience:'Опыт навыков',Fermenter:'Бродильная бочка',FireSource:'Источники огня',Food:'Еда',Smelter:'Плавильня',Furnace:'Доменная печь',Game:'Общие правила игры',Hotkeys:'Горячие клавиши',Items:'Предметы',Hud:'Игровой интерфейс',Gathering:'Добыча ресурсов',Pickable:'Сбор предметов',Durability:'Прочность',Armor:'Броня',Kiln:'Углевыжигательная печь',Map:'Карта',Player:'Персонаж',Server:'Сервер',Stamina:'Выносливость',StaminaUsage:'Расход выносливости',EitrUsage:'Расход эйтра',HealthUsage:'Расход здоровья',StructuralIntegrity:'Устойчивость и повреждения построек',Ward:'Обереги',Workbench:'Верстак',Wagon:'Телега',Inventory:'Инвентарь и хранилища',FreePlacementRotation:'Свободное вращение',Shields:'Щиты',FirstPerson:'Вид от первого лица',GridAlignment:'Выравнивание по сетке',CraftFromChest:'Изготовление из сундуков',Windmill:'Мельница',SpinningWheel:'Прялка',EitrRefinery:'Очиститель эйтра',PlayerProjectile:'Снаряды игрока',MonsterProjectile:'Снаряды противников',Tameable:'Приручение',Procreation:'Размножение животных',GameClock:'Игровые часы',Brightness:'Яркость',Chat:'Чат',LootDrop:'Выпадение добычи',WispSpawner:'Источники огоньков',Demister:'Рассеивание тумана',HotTub:'Горячая купель',ShieldGenerator:'Генератор щита',Turret:'Баллиста',AutoStack:'Автоматическая укладка',Oven:'Каменная печь',SapCollector:'Сборщик сока',Time:'Время суток',Ship:'Корабли',Egg:'Яйца',FrigidKiln:'Морозная печь',FrostFoundry:'Ледяная плавильня',Adrenaline:'Адреналин'};
 const MOD_LABELS_RU=Object.fromEntries(`
 enabled|Включить раздел
 mainMenuLogo|Логотип V+ в главном меню
@@ -257,17 +257,32 @@ ice|Лёд
 replyTimeout|Время ожидания ответа
 timberwood|Строевая древесина
 unarmedDamageScale|Масштаб урона без оружия
+gainMultiplier|Получение адреналина
+decayMultiplier|Убывание адреналина
+trinketCostMultiplier|Порог адреналина для талисманов
+surgeDurationMultiplier|Длительность эффекта талисманов
+syncPins|Общие метки карты
+stopAutoFuelOatThreshold|Порог автозагрузки овса
+seeds|Семена
+moltenCores|Расплавленные ядра
+frostCores|Морозные ядра
+petrifiedTissue|Окаменевшая ткань
+obsidian|Обсидиан
+softTissue|Мягкая ткань
+callerMouldDropChanceMultiplier|Шанс форм брони Caller
+vanguardMouldDropChanceMultiplier|Шанс форм брони Vanguard
+protectorMouldDropChanceMultiplier|Шанс форм брони Protector
 `.trim().split('\n').map(s=>s.split('|')));
 const MOD_ITEMS_RU={swords:'Мечи',knives:'Ножи',clubs:'Дубины',polearms:'Древковое оружие',spears:'Копья',blocking:'Блокирование',axes:'Топоры',bows:'Луки',elementalMagic:'Стихийная магия',bloodMagic:'Магия крови',unarmed:'Без оружия',pickaxes:'Кирки',woodCutting:'Рубка деревьев',crossbows:'Арбалеты',jump:'Прыжки',sneak:'Скрытность',run:'Бег',swim:'Плавание',fishing:'Рыбалка',cooking:'Кулинария',farming:'Земледелие',crafting:'Изготовление',ride:'Верховая езда',wood:'Древесина',fineWood:'Качественная древесина',coreWood:'Цельная древесина',elderBark:'Древняя кора',yggdrasilWood:'Древесина Иггдрасиля',blackwood:'Чёрная древесина',stone:'Камень',grausten:'Граустен',blackMarble:'Чёрный мрамор',tinOre:'Оловянная руда',copperOre:'Медная руда',copperScrap:'Медный лом',ironScrap:'Железный лом',silverOre:'Серебряная руда',chitin:'Хитин',feather:'Перья',flametalOre:'Руда огнеметалла',proustitePowder:'Порошок прустита',hammer:'Молот',cultivator:'Пропашник',hoe:'Мотыга',weapons:'Оружие',armor:'Броня',shields:'Щиты',torch:'Факел',helmets:'Шлемы',chests:'Нагрудники',legs:'Поножи',capes:'Плащи',iron:'Железо',hardWood:'Твёрдая древесина',marble:'Мрамор',ashstone:'Пепельный камень',ancient:'Древние материалы'};
 function modLabel(key){
   if(MOD_LABELS_RU[key]||MOD_ITEMS_RU[key])return MOD_LABELS_RU[key]||MOD_ITEMS_RU[key];
-  const match=key.match(/^(woodChest|personalChest|ironChest|blackmetalChest|cartInventory|karveInventory|longboatInventory)(Rows|Columns)$/);
-  if(match)return ({woodChest:'Деревянный сундук',personalChest:'Личный сундук',ironChest:'Укреплённый сундук',blackmetalChest:'Сундук из чёрного металла',cartInventory:'Телега',karveInventory:'Карви',longboatInventory:'Драккар'})[match[1]]+(match[2]==='Rows'?' — строки':' — столбцы');
+  const match=key.match(/^(woodChest|personalChest|ironChest|blackmetalChest|graustenChest|wardrobe|barrel|cartInventory|karveInventory|longboatInventory|drakkarInventory)(Rows|Columns)$/);
+  if(match)return ({woodChest:'Деревянный сундук',personalChest:'Личный сундук',ironChest:'Укреплённый сундук',blackmetalChest:'Сундук из чёрного металла',cartInventory:'Телега',karveInventory:'Карви',longboatInventory:'Длинный корабль',graustenChest:'Граустеновый сундук',wardrobe:'Шкаф',barrel:'Бочка',drakkarInventory:'Драккар'})[match[1]]+(match[2]==='Rows'?' — строки':' — столбцы');
   return 'Дополнительный параметр: '+key;
 }
 function modOption(value){return ({true:'Да',false:'Нет',None:'Нет',Normal:'Обычный',Disabled:'Отключено',Enabled:'Включено',Morning:'Утро',Day:'День',Evening:'Вечер',Night:'Ночь'})[value]||value;}
 
-// Краткие пояснения по комментариям CFG и исходникам Grantapher 0.10.2.0.
+// Краткие пояснения по комментариям CFG и исходникам Grantapher до 10.4.0.0 включительно.
 // Диапазоны не дублируются здесь: они читаются из установленного файла мода.
 const MOD_HELP_RU=Object.fromEntries(`
 enabled|Включает применение остальных настроек этого раздела. «Нет» отключает раздел.
@@ -482,7 +497,56 @@ onlySpawnAtNight|«Да» — огоньки появляются только �
 wispSpawnIntervalMultiplier|Процентное изменение интервала попыток появления огоньков: −50 сокращает стандартные 5 секунд до 2,5.
 wispSpawnChanceMultiplier|Процентное изменение вероятности появления огонька за попытку. По описанию автора, 200 доводит её до 100%.
 `.trim().split('\n').map(line=>line.split('|')));
+// Changes introduced in https://github.com/Grantapher/ValheimPlus/releases/tag/10.4.0.0.
+// Runtime clamping belongs in the help text: the author declares no CFG range for these floats.
+const MOD_HELP_104={
+  'Adrenaline/gainMultiplier':[
+    'Процентное изменение получаемого адреналина. 0 — без изменения, 100 — вдвое больше, −100 — получение отключено.',
+    'Percentage change to adrenaline gained: 0 keeps normal gain, 100 doubles it, and −100 stops gaining it.'],
+  'Adrenaline/decayMultiplier':[
+    'Процентное изменение естественного убывания адреналина: 100 — вдвое быстрее, −100 — убывание отключено. Штрафы адреналина не меняются.',
+    'Percentage change to passive adrenaline decay: 100 drains twice as fast, and −100 stops decay. Adrenaline penalties are unchanged.'],
+  'Adrenaline/trinketCostMultiplier':[
+    'Процентное изменение адреналина, нужного для активации экипированного талисмана: 100 — вдвое больше, −50 — вдвое меньше. При применении значения ниже −99 считаются равными −99.',
+    'Percentage change to adrenaline needed to activate equipped trinkets: 100 doubles it and −50 halves it. At runtime, values below −99 are treated as −99.'],
+  'Adrenaline/surgeDurationMultiplier':[
+    'Процентное изменение длительности активированного эффекта талисмана: 100 — вдвое дольше, −50 — вдвое короче. При применении значения ниже −99 считаются равными −99.',
+    'Percentage change to an activated trinket effect’s duration: 100 doubles it and −50 halves it. At runtime, values below −99 are treated as −99.'],
+  'Map/syncPins':[
+    'Делится сохраняемыми метками карты со всеми игроками сервера. Чужие метки бледные до нажатия. Удаление общей метки удаляет её у всех, включая игроков вне сети; точки смерти, появления и временные сигналы не передаются.',
+    'Shares saved map pins with everyone on the server. Other players’ pins appear faded until clicked. Deleting a shared pin deletes it for everyone, including offline players; death, spawn, and temporary ping pins are excluded.'],
+  'Windmill/stopAutoFuelOatThreshold':[
+    'Останавливает автоматический забор овса, когда в ближайших сундуках суммарно есть указанное количество овсяной муки. 0 отключает предел. Ячмень и семена овса продолжают загружаться; нужен autoFuel.',
+    'Stops automatically pulling oats when nearby chests contain this much oat flour in total. 0 disables the threshold. Barley and oat seeds are still pulled; requires autoFuel.'],
+  'Pickable/seeds':[
+    'Процентное изменение ручного сбора семян моркови, репы, лука, капусты и овса. 0 — без изменения, 100 — вдвое больше. С V+ 10.4 семена регулируются здесь отдельно от цветов и ингредиентов; прежний бонус автоматически не переносится.',
+    'Percentage change to hand-picked carrot, turnip, onion, kale, and oat seeds: 0 keeps normal yield and 100 doubles it. Since V+ 10.4, seeds are separate from flowersAndIngredients; any previous bonus is not carried over automatically.'],
+  'Pickable/moltenCores':[
+    'Процентное изменение количества расплавленных ядер при ручном сборе. 0 — без изменения, 100 — вдвое больше.',
+    'Percentage change to hand-picked Molten Cores: 0 keeps normal yield and 100 doubles it.'],
+  'Pickable/frostCores':[
+    'Процентное изменение количества морозных ядер при ручном сборе. 0 — без изменения, 100 — вдвое больше.',
+    'Percentage change to hand-picked Frostcores: 0 keeps normal yield and 100 doubles it.']
+};
+for(const [key,name] of [['callerMouldDropChanceMultiplier','Caller'],['vanguardMouldDropChanceMultiplier','Vanguard'],['protectorMouldDropChanceMultiplier','Protector']])MOD_HELP_104['LootDrop/'+key]=[
+  `Процентное изменение шанса выпадения форм шлема, нагрудника и поножей ${name}. Применяется совместно с общим lootDropChanceMultiplier: 0 — без изменения, 100 — удвоение, −100 — эти формы не выпадают.`,
+  `Percentage change to ${name} helmet, chest, and leg mould drop chance. Stacks with lootDropChanceMultiplier: 0 keeps normal chance, 100 doubles it, and −100 disables these drops.`
+];
+function modDescriptionEn(e){return MOD_HELP_104[e.id]?.[1]||e.description||'No description provided by the mod author. See the setting name and value limits below.';}
+const MOD_PICKABLE_104_RU={
+  edibles:'Процентное изменение ручного сбора ягод (включая бруснику), грибов, лука, моркови, капусты и картофеля poteitr. 0 — без изменения, 100 — вдвое больше.',
+  flowersAndIngredients:'Процентное изменение ручного сбора ячменя, льна, одуванчиков, чертополоха, репы, маточного молочка, яиц грифов и потрохов. Семена в V+ 10.4 регулируются отдельно параметром seeds.',
+  materials:'Процентное изменение ручного сбора материалов: костей, кремня, камня, веток, кристаллов, смолы, шерсти и когтей волка, обсидиана, граустена, руды, минералов и обугленных черепов. 0 — без изменения, 100 — вдвое больше.',
+  valuables:'Процентное изменение ручного сбора янтаря, янтарного жемчуга, монет, рубинов и других самоцветов. 0 — без изменения, 100 — вдвое больше.'
+};
 function modDescription(e){
+  // Keep the former meaning when editing a pre-10.4 CFG: its seeds still belong to flowersAndIngredients.
+  if(e.section==='Pickable'&&/kale|Volture|Charred Skulls|gemstones/i.test(e.description||'')&&MOD_PICKABLE_104_RU[e.key])return MOD_PICKABLE_104_RU[e.key];
+  if(MOD_HELP_104[e.id])return MOD_HELP_104[e.id][0];
+  if(e.key==='animalTypes'){
+    const moose=e.options?.some(v=>v.toLowerCase()==='moose')?', moose — лось':'';
+    return `Виды животных для ${e.section==='Procreation'?'изменения размножения':'приручения'}: boar — кабан, hen — курица, wolf — волк, lox — быкоящер, asksvin — асксвин${moose}; all — все, none — ни один. Можно указать несколько видов через запятую, например Boar, Wolf.`;
+  }
   const title=modLabel(e.key);
   if(e.key==='enabled')return MOD_HELP_RU.enabled;
   if(e.options?.includes('Keypad0'))return `Клавиша действия «${title}». Выберите название клавиши из списка; None отключает назначение.`;
@@ -502,6 +566,7 @@ function modDescription(e){
 function modConstraints(e){
   let text;
   if(e.kind==='bool')text='Значения: Да (true) / Нет (false).';
+  else if(e.flags)text=`Флаги: один или несколько вариантов через запятую (${e.options.join(', ')}).`;
   else if(e.options.length)text=e.options.length>12?'Значения: только варианты из списка.':`Значения: ${e.options.map(modOption).join(', ')}.`;
   else if(e.kind==='int'||e.kind==='float'){
     text=e.kind==='int'?'Целое число.':'Число; дробная часть через точку, например 1.5.';

@@ -29,6 +29,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from configuration import Configuration, atomic_text, game_ports, server_mode, listing_required, default_world
 from panel import Panel, password_hash
 import world_transfer
+from vplus_data import prepare_vplus_data
 from operations import Operations
 from player_access import PlayerAccess, LABELS as PLAYER_ACTION_NAMES, steam_id
 from health import HealthMonitor
@@ -333,6 +334,8 @@ class Manager:
             return
         self.player_access.cleanup(force=True)
         folder = self.active()
+        if (self.metadata() or {}).get('mode', 'plus') == 'plus':
+            prepare_vplus_data(self.base, folder)
         config = folder / 'BepInEx/config'
         if (self.metadata() or {}).get("mode", "plus") != "vanilla" and not config.is_symlink():
             if config.exists():
@@ -402,6 +405,10 @@ class Manager:
     def backup(self, label='manual'):
         if self.running():
             raise RuntimeError('Для согласованной копии сервер должен быть остановлен')
+        if self.state.get('active') and (self.metadata() or {}).get('mode', 'plus') == 'plus':
+            legacy = self.active() / 'BepInEx/vplus-data'
+            if legacy.exists() or legacy.is_symlink():
+                prepare_vplus_data(self.base, self.active())
         # Temporary kicks must never become permanent bans after restoring a backup.
         self.player_access.cleanup(force=True)
         name = time.strftime('%Y%m%d-%H%M%S') + '-' + secrets.token_hex(3) + '-' + label + '.tar.gz'
@@ -544,6 +551,14 @@ class Manager:
                         previous_mods.rename(self.base / 'mods')
                     self.mods = ModManager(self.base, external_versions=self.mod_external_versions)
                     if was_running: self.start()
+                    raise
+            if mode == 'plus':
+                try:
+                    # The disposable version-probe map must never enter the real world.
+                    prepare_vplus_data(self.base, stage, migrate=False)
+                except Exception:
+                    if was_running:
+                        self.start()
                     raise
             old = self.state.get('active')
             old_state = self.state.copy()

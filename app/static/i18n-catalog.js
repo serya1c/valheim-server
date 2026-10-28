@@ -1,4 +1,38 @@
 window.HEARTH_EN = {
+  "Каталог данных V+ должен быть обычной папкой внутри данных сервера": "The V+ data directory must be a regular folder inside the server data directory",
+  "Каталог установки V+ должен находиться внутри releases": "The V+ installation directory must be inside releases",
+  "Каталог BepInEx не должен быть ссылкой": "The BepInEx directory must not be a symbolic link",
+  "Постоянный каталог данных V+ не должен быть ссылкой или файлом": "The persistent V+ data directory must not be a symbolic link or a file",
+  "В постоянных данных V+ есть ссылки или подпапки; проверьте каталог": "Persistent V+ data contains symbolic links or subfolders; check the directory",
+  "Ссылка данных V+ указывает за пределы постоянного каталога": "The V+ data link points outside the persistent directory",
+  "В старых данных V+ есть ссылки или подпапки; перенесите данные вручную": "Old V+ data contains symbolic links or subfolders; move the data manually",
+
+  "По умолчанию:": "Default:",
+  "строки": "rows",
+  "столбцы": "columns",
+  "Адреналин": "Adrenaline",
+  "Получение адреналина": "Adrenaline gain",
+  "Убывание адреналина": "Adrenaline decay",
+  "Порог адреналина для талисманов": "Trinket adrenaline cost",
+  "Длительность эффекта талисманов": "Trinket effect duration",
+  "Общие метки карты": "Shared map pins",
+  "Порог автозагрузки овса": "Oat auto-fuel threshold",
+  "Семена": "Seeds",
+  "Расплавленные ядра": "Molten Cores",
+  "Морозные ядра": "Frostcores",
+  "Окаменевшая ткань": "Petrified Tissue",
+  "Обсидиан": "Obsidian",
+  "Мягкая ткань": "Soft Tissue",
+  "Шанс форм брони Caller": "Caller mould drop chance",
+  "Шанс форм брони Vanguard": "Vanguard mould drop chance",
+  "Шанс форм брони Protector": "Protector mould drop chance",
+  "Граустеновый сундук": "Grausten chest",
+  "Шкаф": "Wardrobe",
+  "Бочка": "Barrel",
+  "Длинный корабль": "Longship",
+  "Флаги: один или несколько вариантов через запятую (": "Flags: one or more comma-separated values (",
+  "используйте допустимые варианты через запятую": "use the allowed comma-separated values",
+
   "Выключить звук": "Mute sound",
   "Включить звук": "Enable sound",
   "Лаунчер скоро появится": "The launcher is coming soon",
@@ -1043,7 +1077,7 @@ window.HEARTH_EN = {
   "Укреплённый сундук": "Reinforced chest",
   "Сундук из чёрного металла": "Black metal chest",
   "Карви": "Karve",
-  "Драккар": "Longship",
+  "Драккар": "Drakkar",
   "Мир: ": "World: ",
   "до": "to",
   "Проверка запуска основного мира (до 180 секунд)": "Checking main world startup (up to 180 seconds)",
@@ -1674,6 +1708,8 @@ window.HEARTH_EN = {
   "Удалите прежнюю ручную установку ValheimAdminRu перед установкой Hearth Admin": "Remove the previous manual ValheimAdminRu installation before installing Hearth Admin"
 };
 window.HEARTH_PATTERNS = [
+  ["Конфликт данных V+: {0}. Старые файлы сохранены; сравните их перед переносом", "V+ data conflict: {0}. The old files were preserved; compare them before migration"],
+
   [
     "Бан игрока: Steam_{0}",
     "Player banned: Steam_{0}"
