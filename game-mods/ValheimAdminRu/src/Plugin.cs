@@ -9,7 +9,7 @@ namespace ValheimAdminRu
     [BepInPlugin("ru.valheim.adminpanel", "Админ-панель Valheim", ModVersion)]
     public sealed class Plugin : BaseUnityPlugin
     {
-        public const string ModVersion = "0.4.1";
+        public const string ModVersion = "0.4.2";
         public const string GameVersion = GameCompatibility.BuildVersion;
         public static bool SupportsGameVersion(string version) => GameCompatibility.Supports(version);
         public static Plugin Instance;

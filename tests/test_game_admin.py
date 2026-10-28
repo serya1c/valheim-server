@@ -37,7 +37,7 @@ class GameAdminTests(unittest.TestCase):
         self.manager.proc.poll.return_value = None
         stream = io.BytesIO()
         with zipfile.ZipFile(stream, 'w') as archive:
-            archive.writestr('manifest.json', json.dumps({'version_number': '0.4.0', 'dependencies': []}))
+            archive.writestr('manifest.json', json.dumps({'version_number': '0.4.1', 'dependencies': []}))
             archive.writestr('BepInEx/plugins/ValheimAdminRu/ValheimAdminRu.dll', b'MZfixture')
         package = self.base / 'builtin.zip'
         package.write_bytes(stream.getvalue())
@@ -53,7 +53,7 @@ class GameAdminTests(unittest.TestCase):
 
     def snapshot(self, **overrides):
         root = ET.Element('status', {'protocol': '1', 'session': SESSION, 'at': str(time.time()),
-                                    'mod': '0.4.0', 'game': '1.0.17', 'world': 'North', **overrides})
+                                    'mod': '0.4.1', 'game': '1.0.17', 'world': 'North', **overrides})
         players = ET.SubElement(root, 'players')
         for steam in (STEAM, OTHER):
             player = ET.SubElement(players, 'player', {'steam_id': steam, 'identity': 'Steam_' + steam,
@@ -182,7 +182,7 @@ class GameAdminTests(unittest.TestCase):
     def test_bundled_artifact_contains_only_plugin_and_public_metadata(self):
         info = game_admin.builtin_info()
         self.assertIsNotNone(info)
-        self.assertEqual(info['games'], ['1.0.16', '1.0.17', '1.0.20'])
+        self.assertEqual(info['games'], ['1.0.16', '1.0.17', '1.0.20', '1.0.21'])
         self.assertEqual(hashlib.sha256(game_admin.BUNDLE.read_bytes()).hexdigest(), info['sha256'])
         with zipfile.ZipFile(game_admin.BUNDLE) as archive:
             self.assertEqual(set(archive.namelist()), {'BepInEx/plugins/ValheimAdminRu/ValheimAdminRu.dll', 'manifest.json', 'README.md'})
@@ -199,10 +199,10 @@ class GameAdminTests(unittest.TestCase):
 
     def test_builtin_operation_preserves_config_and_distributes_identical_dll(self):
         self.manager.proc = None
-        server.atomic_json(self.manager.active() / 'hearth.json', {'mode': 'plus', 'game': '1.0.20', 'mod': '0.10.2.0'})
+        server.atomic_json(self.manager.active() / 'hearth.json', {'mode': 'plus', 'game': '1.0.21', 'mod': '10.4.0.0'})
         self.manager.publish_client_mods()
         previous_revision = self.manager.public_client_mods()['revision']
-        self.assertEqual(self.manager.public_client_mods()['packages'][0]['version'], '0.4.0')
+        self.assertEqual(self.manager.public_client_mods()['packages'][0]['version'], '0.4.1')
         config = self.base / 'config/ValheimAdminRu/roles.xml'
         config.parent.mkdir(parents=True)
         config.write_text('<roles/>')
@@ -210,9 +210,9 @@ class GameAdminTests(unittest.TestCase):
         package = self.manager.mods.view()['packages'][0]
         self.assertEqual(package['source'], 'builtin')
         self.assertEqual(package['version'], game_admin.builtin_info()['version'])
-        self.assertEqual(package['version'], '0.4.1')
+        self.assertEqual(package['version'], '0.4.2')
         self.assertNotEqual(self.manager.public_client_mods()['revision'], previous_revision)
-        self.assertEqual(self.manager.public_client_mods()['packages'][0]['version'], '0.4.1')
+        self.assertEqual(self.manager.public_client_mods()['packages'][0]['version'], '0.4.2')
         installed = next((self.manager.active() / 'BepInEx/plugins/HearthMods').rglob('ValheimAdminRu.dll')).read_bytes()
         with zipfile.ZipFile(self.base / 'client-mods.zip') as archive:
             path = next(name for name in archive.namelist() if name.endswith('ValheimAdminRu.dll'))

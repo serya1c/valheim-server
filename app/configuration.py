@@ -121,6 +121,7 @@ def cfg_entries(text):
             kind = 'float'
         entries.append({'id':ident, 'section':section, 'key':key, 'value':value, 'kind':kind,
             'options': [s.strip() for s in options[1].split(',')] if options else [],
+            'flags': bool(options and 'Multiple values can be set at the same time' in metadata),
             'min':float(bounds[1]) if bounds else None, 'max':float(bounds[2]) if bounds else None,
             'default':default[1] if default else None, 'description':description, 'line':index})
         comments = []
@@ -131,7 +132,11 @@ def validate_value(entry, value):
     clean_text(value, entry['id'], maximum=2048)
     if entry['kind'] == 'bool' and value not in ('true','false'):
         raise ValueError(f"{entry['id']}: выберите да или нет")
-    if entry['options'] and value not in entry['options']:
+    if entry.get('flags'):
+        allowed = {v.casefold() for v in entry['options']}
+        if any(v.strip().casefold() not in allowed for v in value.split(',')):
+            raise ValueError(f"{entry['id']}: используйте допустимые варианты через запятую")
+    elif entry['options'] and value not in entry['options']:
         raise ValueError(f"{entry['id']}: значение отсутствует в списке допустимых")
     if entry['kind'] in ('int','float'):
         if entry['kind'] == 'int' and not re.fullmatch(r'[+-]?\d+', value):

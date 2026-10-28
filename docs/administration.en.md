@@ -184,6 +184,8 @@ Under **World and backups → Move your world to another server**, select **Prep
 
 A V+ world's ZIP must include the server mod configuration with its comments. Export excludes panel and game passwords, website settings, player history, and game/mod executables. The mod configuration is copied in full; review custom values before sharing it. Additional mod plugins are not included.
 
+V+ shared map data (exploration, pins, and deleted-pin IDs) lives in `/data/saves/vplus-data` and is included in full game backups. Starting the game or preparing a backup migrates files from the active installation; conflicting files stop migration and keep the original data for manual comparison. Individual-world export ZIP formats 1/2 do not transfer this V+ data: use a full backup from a matching release or move the selected world's files separately while both servers are stopped.
+
 ### Import a world
 
 Install the **same mode and Valheim/V+ versions** on the destination. Select the export and choose **Upload and check**. Upload and validation do not change the world or stop the running game. The panel displays the name and versions from the archive. Validation lasts one hour and is repeated during import; upload again after a panel restart.
@@ -236,7 +238,7 @@ SteamID lists and actions require panel sign-in and are not published on the web
 
 Under **Mods**, install the bundled **Hearth Admin (ValheimAdminRu)**. It uses the existing backup and restart workflow and installs on both the server and the client collection. Players close Valheim and press Play in the launcher after the collection changes. If it was installed manually before, back up and remove the old DLL on both the server and every client first. The launcher does not automatically remove manual copies; leaving one creates a duplicate plugin.
 
-The mod requires BepInEx 5.4 or Valheim Plus. It is unavailable in vanilla mode. Server and clients must use matching mod and game versions. **Hearth Admin 0.4.1** targets Valheim **1.0.16, 1.0.17, and 1.0.20**; the DLL was built against **1.0.20** libraries, Steam build **25909357**. Static checks of the game APIs used by the mod found no contract changes; 0.4.1 has not yet been tested in game. The maintainer's confirmation before Hearth 1.6.0 applies to mod 0.4.0. After changing the game version or mod collection, try the actions on a world copy first.
+The mod requires BepInEx 5.4 or Valheim Plus. It is unavailable in vanilla mode. Server and clients must use matching mod and game versions. **Hearth Admin 0.4.2** targets Valheim **1.0.16, 1.0.17, 1.0.20, and 1.0.21**; the DLL was built against **1.0.21** libraries, Steam build **26249040**. Static checks of the game APIs used by the mod found no contract changes; 0.4.2 has not yet been tested in game. The maintainer's confirmation before Hearth 1.6.0 applies to mod 0.4.0. After changing the game version or mod collection, try the actions on a world copy first.
 
 Updating the panel files or image does not replace an installed package. After updating Hearth, open **Mods** and click **Update** on Hearth Admin or **Reinstall bundled version** in its card. Hearth creates a backup, updates the server package, and publishes a new client collection. Players then close Valheim and press **Play** in the launcher to synchronize mods before starting the game. Keep the mod configuration and `adminlist.txt`.
 

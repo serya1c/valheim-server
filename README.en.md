@@ -104,7 +104,7 @@ Disconnection uses a short temporary ban and takes effect with a delay while the
 
 Install the bundled **Hearth Admin (ValheimAdminRu)** under **Mods** to add it to the server and client collection. Its in-game **F8** menu supports RU / EN and Owner, Moderator, and Builder roles. In **Game tools**, the Hearth administrator selects an online executor by SteamID for travel, player assistance, spawning, terrain, the super hammer, and building. Web access does not change that player's in-game role.
 
-These tools require BepInEx or Valheim Plus and matching mod and game versions on the server and players' clients; they are unavailable in vanilla mode. **Hearth Admin 0.4.1** targets Valheim **1.0.16 / 1.0.17 / 1.0.20**. The DLL was rebuilt against 1.0.20 libraries and the API it uses was checked; 0.4.1 has not yet been tested in game. The maintainer's confirmation before Hearth 1.6.0 applies to mod 0.4.0. [Read about permissions and saved data](docs/administration.en.md#hearth-admin).
+These tools require BepInEx or Valheim Plus and matching mod and game versions on the server and players' clients; they are unavailable in vanilla mode. **Hearth Admin 0.4.2** targets Valheim **1.0.16 / 1.0.17 / 1.0.20 / 1.0.21**. The DLL was rebuilt against 1.0.21 libraries and the API it uses was checked; 0.4.2 has not yet been tested in game. The maintainer's confirmation before Hearth 1.6.0 applies to mod 0.4.0. [Read about permissions and saved data](docs/administration.en.md#hearth-admin).
 
 Updating the panel does not replace an installed mod. After updating Hearth, open **Mods** and click **Update** on Hearth Admin or **Reinstall bundled version**. Players then close Valheim and press **Play** in the launcher to synchronize the client collection.
 
