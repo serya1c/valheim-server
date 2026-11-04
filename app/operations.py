@@ -354,7 +354,7 @@ class Operations:
             self.manager.maintenance_wait_empty=task['wait_empty']
             self.manager.maintenance_deadline=task.get('deadline')
             self.manager.guard_maintenance()
-            self.manager.execute('scheduled' if task.get('routine_id') and task['operation']=='backup' else task['operation'],{})
+            result = self.manager.execute('scheduled' if task.get('routine_id') and task['operation']=='backup' else task['operation'],{})
         except Exception as error:
             with self.lock:
                 task['state']='skipped' if task.get('routine_id') and str(error)==DEADLINE_ERROR else 'error'
@@ -364,9 +364,13 @@ class Operations:
         else:
             with self.lock:
                 task['state']='done'
-                if task.get('routine_id'):self._remember(task,'done')
+                if task.get('routine_id'):self._remember(task,'done', 'no_updates' if isinstance(result,dict) and result.get('updated') is False else None)
                 self.save()
-            self.notify('maintenance','Обслуживание завершено: '+LABELS[task['operation']]+'.')
+            if isinstance(result, dict) and result.get('updated') is False:
+                self.notify('maintenance', 'Проверка обновлений завершена. '+result['message'])
+            else:
+                self.notify('maintenance','Обслуживание завершено: '+LABELS[task['operation']]+'.')
+            return result
         finally:
             self.manager.maintenance_wait_empty=False
             self.manager.maintenance_deadline=None

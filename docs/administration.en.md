@@ -264,16 +264,16 @@ The last successful backup is based on a completed panel operation and the prese
 
 ## Game updates and rollback
 
-1. Select **Install latest versions**. There are no version numbers to enter.
-2. Hearth downloads the current Steam public-branch server for the selected mode. V+ additionally resolves Grantapher's latest stable release, verifies the official `UnixServer.zip` SHA-256, and installs BepInEx. Custom BepInEx mode installs its loader without V+.
-3. The candidate runs on a separate temporary world. Hearth checks its version, readiness, and loading errors; V+ also requires the expected mod version and BepInEx 5.
-4. If only the game's version differs from the mod author's declaration, a one-time approval becomes available for that exact pair and archive hash for 30 minutes. Approval downloads and validates the files again. It does not bypass a wrong checksum or startup errors.
-5. The live game stops gracefully, world/configuration/mods are backed up, and the active release switches. Hearth waits up to 180 seconds for the main world to become ready, followed by five seconds of startup observation.
+1. Select **Check and update server**. There are no version numbers to enter.
+2. Hearth checks the available Steam public-branch build against the installed build. V+ also compares Grantapher's latest stable mod version and the official `UnixServer.zip` SHA-256; custom collections compare the BepInEx loader version. If the build, mode, mod, and loader are unchanged, the operation finishes without downloading the game, a trial launch, a backup, or a server restart.
+3. Changed candidates are downloaded into a separate directory. V+ verifies the archive's SHA-256 and includes BepInEx. Custom BepInEx mode installs its supported 5.4 loader and checks the retained collection's dependencies; vanilla mode installs no loader or plugins.
+4. The candidate runs on a separate temporary world with a private copy of the current settings. Hearth checks its version, readiness, and loading errors, observes it for another 5 seconds after readiness, and requires a clean shutdown; V+ also requires the expected mod version and BepInEx 5. An error-free startup automatically allows the update, even if V+ declares another game version. No second download for manual approval is needed.
+5. Maintenance conditions are checked again before switching. The live game stops gracefully, world/configuration/mods are backed up, and the active release switches. Hearth waits up to 180 seconds for the main world to become ready, followed by five seconds of startup observation.
 6. On failure, Hearth attempts to restore the previous release, world, and configuration. Restarting the container with an unfinished trial also triggers rollback. A failed first installation has no previous release to restore; its game process is stopped.
 
 Selecting `plus`, `modded`, or `vanilla` in settings does not replace the installed release by itself; apply it through an update. Older releases without a mode field are treated as V+. Rollback restores the previous installed mode; the selected next-install mode may still differ. Additional mods are retained across game updates.
 
-Process readiness does not guarantee every gameplay mechanic or client connection works. Later problems require manual rollback. Approving a version pair does not mean the mod author officially supports it.
+Process readiness does not guarantee every gameplay mechanic or client connection works. Later problems require manual rollback. Automatically accepting a tested pair does not mean the mod author officially supports it.
 
 ## Maintenance and Discord
 
@@ -283,7 +283,7 @@ In **Maintenance**, schedule one restart, stop, backup, or game/mod update up to
 
 Player count is checked again immediately before changing the server, including after downloading and validating an update candidate. Returning players or a failed A2S query at this final check cancel the operation without stopping the running game. This checks current state; it does not prevent new connections.
 
-A pending task can be cancelled and survives panel restarts. A task that already started and was interrupted by a restart is not automatically repeated: inspect the journal and schedule another. Tasks use settings current at execution time. Scheduled updates do not approve V+ version mismatches; use the normal update flow with manual approval. The website displays pending or current maintenance. No in-game messages are sent.
+A pending task can be cancelled and survives panel restarts. A task that already started and was interrupted by a restart is not automatically repeated: inspect the journal and schedule another. Tasks use settings current at execution time. Scheduled updates use the same version checks: an unchanged build is skipped, and a successful trial automatically allows the update without manual approval. The website displays pending or current maintenance. No in-game messages are sent.
 
 ### Recurring maintenance
 
@@ -291,7 +291,7 @@ Under **Maintenance → Recurring maintenance**, create up to 20 daily or weekly
 
 Recurring tasks always wait for a fresh A2S reply and one empty minute. The waiting window is 2–1,440 minutes from the scheduled time, including queue time and update-candidate validation. If it expires before the server change starts, that occurrence is skipped without forcing players offline; the next occurrence remains scheduled. Tasks execute sequentially.
 
-Occurrences missed while the panel is off are not caught up, and interrupted operations are not replayed. At daylight-saving transitions, a nonexistent local time is skipped and a repeated local time runs once. Automatic V+ compatibility approval is not supported.
+Occurrences missed while the panel is off are not caught up, and interrupted operations are not replayed. At daylight-saving transitions, a nonexistent local time is skipped and a repeated local time runs once. Updates use the same version checks and automatically accept a candidate after a successful temporary-world test.
 
 Recurring backups use **Settings → Panel → Scheduled backups to keep**. The older interval-based backup schedule remains independent; disable it if recurring schedules now cover all backups. Manual and pre-update archives remain separate from this retention limit.
 

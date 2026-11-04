@@ -1,4 +1,22 @@
 window.HEARTH_EN = {
+  "Проверка доступных версий сервера и мода": "Checking available server and mod versions",
+  "Обновлений нет: сервер и мод уже актуальны.": "No updates: the server and mod are already up to date.",
+  "Обновление проверено и установлено.": "The update was verified and installed.",
+  "Не удалось определить сборку загруженного сервера Steam; рабочий сервер не изменён": "Could not determine the downloaded Steam server build; the running server was not changed",
+  "Сборка Steam изменилась во время загрузки. Повторите проверку обновлений; рабочий сервер не изменён": "The Steam build changed during download. Check for updates again; the running server was not changed",
+  "Тестовый мир не завершился корректно; обновление отменено": "The test world did not shut down correctly; the update was cancelled",
+  "Некорректная версия игры после тестового запуска": "Invalid game version after the test startup",
+  "Проверка обновлений завершена. Обновлений нет: сервер и мод уже актуальны.": "Update check completed. No updates: the server and mod are already up to date.",
+  "Не удалось определить последнюю сборку сервера Steam": "Could not determine the latest Steam server build",
+  "Проверка версий отменена: панель останавливается": "Version check cancelled: the panel is shutting down",
+  "SteamCMD не завершил проверку версий за отведённое время": "SteamCMD did not finish checking versions within the allotted time",
+  "Версия BepInEx изменилась во время загрузки; повторите проверку обновлений": "The BepInEx version changed during download; check for updates again",
+  "Конфигурация тестового мира не должна содержать ссылки": "The test-world configuration must not contain symbolic links",
+  "Ошибка чтения журнала тестового мира": "Error reading the test-world log",
+  "Обновлений нет": "No updates",
+  "Проверить и обновить сервер ↗": "Check and update server ↗",
+  "Проверить версии сервера и мода? Если обновлений нет, загрузка и перезапуск не потребуются. Новая сборка пройдёт проверку на временном мире, затем сервер остановится для резервной копии и переключения.": "Check server and mod versions? If nothing has changed, no download or restart is needed. A new build is tested on a temporary world, then the server stops for a backup and switching.",
+  "Панель сначала сравнит доступную сборку Steam с установленной, а также версию и SHA-256 V+ или версию загрузчика BepInEx для своего набора модов. Если изменений нет, загрузка и перезапуск пропускаются. Новая сборка проверяется на временном мире; запуск без ошибок автоматически разрешает обновление, даже если автор V+ указал другую версию игры. Перед переключением создаётся копия, при ошибке запуска основного мира панель пытается выполнить откат. Дополнительные моды сохраняются; после смены сборки игрокам нужно нажать «Играть» в лаунчере.": "The panel first compares the available Steam build with the installed build, together with the V+ version and SHA-256 or the BepInEx loader version for a custom collection. If nothing has changed, downloading and restarting are skipped. A new build is tested on a temporary world; an error-free startup automatically allows the update, even if V+ declares another game version. A backup is made before switching, and failure to start the main world triggers a rollback attempt. Additional mods are retained; players press Play in the launcher after collection changes.",
   "Каталог данных V+ должен быть обычной папкой внутри данных сервера": "The V+ data directory must be a regular folder inside the server data directory",
   "Каталог установки V+ должен находиться внутри releases": "The V+ installation directory must be inside releases",
   "Каталог BepInEx не должен быть ссылкой": "The BepInEx directory must not be a symbolic link",
@@ -1708,6 +1726,10 @@ window.HEARTH_EN = {
   "Удалите прежнюю ручную установку ValheimAdminRu перед установкой Hearth Admin": "Remove the previous manual ValheimAdminRu installation before installing Hearth Admin"
 };
 window.HEARTH_PATTERNS = [
+  ["Тестовый мир подтвердил Valheim {0} + V+ {1}. Обновление одобрено автоматически.", "The test world confirmed Valheim {0} + V+ {1}. The update was approved automatically."],
+  ["Обнаружены изменения: сборка Steam {0}.", "Changes detected: Steam build {0}."],
+  ["Последняя сборка сервера Steam: {0}", "Latest Steam server build: {0}"],
+  ["Тестовый мир не прошёл проверку запуска: {0}. Рабочий сервер не изменён.", "The test world failed startup validation: {0}. The running server was not changed."],
   ["Конфликт данных V+: {0}. Старые файлы сохранены; сравните их перед переносом", "V+ data conflict: {0}. The old files were preserved; compare them before migration"],
 
   [

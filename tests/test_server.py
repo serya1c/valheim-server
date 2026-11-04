@@ -22,6 +22,12 @@ class CoreTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.base = Path(self.tmp.name)
         self.manager = server.Manager(self.base)
+        self.build_check = patch.object(self.manager, 'latest_steam_build', return_value='1000')
+        self.build_check.start()
+        self.addCleanup(self.build_check.stop)
+        self.probe_stability = patch('server.PROBE_STABLE_SECONDS', 0)
+        self.probe_stability.start()
+        self.addCleanup(self.probe_stability.stop)
 
     def tearDown(self):
         for h in self.manager.log.handlers[:]:
@@ -223,7 +229,7 @@ class CoreTests(unittest.TestCase):
             self.manager.say('secret123 and panel123')
         self.assertEqual(self.manager.tail[-1], '[REDACTED] and [REDACTED]')
 
-    def test_failed_compatibility_never_stops_server(self):
+    def test_missing_latest_asset_never_stops_server(self):
         with patch('server.fetch', return_value={'tag_name':'0.10.2.0', 'body':'No compatibility information'}), patch.object(self.manager, 'stop') as stop:
             with self.assertRaises(ValueError):
                 self.manager.install()
@@ -237,7 +243,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual((game, mod), ('1.1.0', '0.11.0.0'))
 
     def test_latest_release_rejects_unsafe_or_ambiguous_metadata(self):
-        for overrides in [{'draft':True}, {'prerelease':True}, {'tag_name':'../../bad'}, {'body':None}, {'body':'Valheim 1.0.15 and Valheim 1.1.0'}]:
+        for overrides in [{'draft':True}, {'prerelease':True}, {'tag_name':'../../bad'}]:
             with self.subTest(overrides=overrides):
                 release = {'tag_name':'0.10.2.0', 'body':'Valheim 1.0.15', **overrides}
                 with patch('server.fetch', return_value=release), patch.object(self.manager, 'stop') as stop:
@@ -275,7 +281,14 @@ class CoreTests(unittest.TestCase):
             else:
                 return release
         process = MagicMock()
-        process.__enter__.return_value = process
+        def downloaded():
+            for stage in (self.base / 'releases').iterdir():
+                if not (stage / 'hearth.json').exists():
+                    (stage / 'steamapps').mkdir(exist_ok=True)
+                    (stage / 'steamapps/appmanifest_896660.acf').write_text('"AppState" { "appid" "896660" "StateFlags" "4" "buildid" "1000" }')
+                    (stage / 'valheim_server.x86_64').touch()
+            return process
+        process.__enter__.side_effect = downloaded
         process.stdout = ['Steam fixture\n']
         process.wait.return_value = 0
         return fetch, process, hashlib.sha256(blob).hexdigest()
@@ -294,7 +307,7 @@ class CoreTests(unittest.TestCase):
         self.release('old')
         (self.base / 'saves/world.db').write_text('world before update')
         fetch, process, digest = self.install_fixture()
-        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe'), patch.object(self.manager, 'wait_ready'), patch.object(self.manager, 'start') as start:
+        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe', return_value='1.0.15'), patch.object(self.manager, 'wait_ready'), patch.object(self.manager, 'start') as start:
             self.manager.install()
             start.assert_called_once()
         self.assertEqual(self.manager.state['previous'], 'old')
@@ -351,65 +364,159 @@ class CoreTests(unittest.TestCase):
     def test_vanilla_probe_accepts_game_ready_without_mod(self):
         process=MagicMock(stdout=io.StringIO('Valheim version: l-1.0.16\nGame server connected\n'))
         process.poll.return_value=None
+        process.returncode=0
         with patch.object(self.manager,'spawn',return_value=process), patch.object(self.manager,'halt'):
             self.assertEqual(self.manager.probe(self.base,None,None),'1.0.16')
 
-    def pending(self, digest):
-        return {'token': 'test-approval', 'declared': '1.0.15', 'actual': '1.0.16',
-                'mod': '0.10.2.0', 'sha256': digest, 'expires': time.time() + 1800}
-
-    def test_mismatch_requests_approval_without_stopping_server(self):
+    def test_healthy_mismatch_is_automatically_approved_without_second_download(self):
         self.release('old')
         fetch, process, digest = self.install_fixture()
-        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe', side_effect=server.CompatibilityApprovalRequired('1.0.16')), patch.object(self.manager, 'stop') as stop:
-            with self.assertRaisesRegex(RuntimeError, 'Одобрите'):
-                self.manager.install()
-            stop.assert_not_called()
-        self.assertEqual(self.manager.compatibility['actual'], '1.0.16')
-        self.assertEqual(self.manager.compatibility['sha256'], digest)
-        self.assertEqual(self.manager.state['active'], 'old')
-        self.assertEqual([p.name for p in (self.base / 'releases').iterdir()], ['old'])
-
-    def test_approved_update_records_actual_version_and_consumes_approval(self):
-        self.release('old')
-        fetch, process, digest = self.install_fixture()
-        self.manager.compatibility = self.pending(digest)
-        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe') as probe, patch.object(self.manager, 'start'), patch.object(self.manager, 'wait_ready') as ready:
-            self.manager.execute('install', {'approval_token': 'test-approval'})
-        self.assertEqual(probe.call_args.args[1:], ('1.0.16', '0.10.2.0'))
+        with patch('server.fetch', side_effect=fetch) as download, patch('server.subprocess.Popen', return_value=process) as steam, patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe', return_value='1.0.16') as probe, patch.object(self.manager, 'start'), patch.object(self.manager, 'wait_ready') as ready:
+            result = self.manager.execute('install', {})
+        self.assertTrue(result['updated'])
+        self.assertEqual(probe.call_args.args[1:], ('1.0.15', '0.10.2.0'))
         ready.assert_called_once_with('1.0.16', '0.10.2.0')
+        steam.assert_called_once()
+        self.assertEqual(sum(call.args[1:] != () for call in download.call_args_list), 1)
         self.assertEqual(self.manager.metadata()['game'], '1.0.16')
+        self.assertEqual(self.manager.metadata()['steam_build'], '1000')
         self.assertTrue(self.manager.metadata()['compatibility']['approved'])
+        self.assertTrue(self.manager.metadata()['compatibility']['automatic'])
         self.assertFalse(self.manager.state['update_trial'])
-        self.assertIsNone(self.manager.compatibility)
-        with self.assertRaises(ValueError):
-            self.manager.install('test-approval')
 
-    def test_invalid_or_expired_approval_does_not_download(self):
-        for token, expires in [('wrong', time.time()+60), ('test-approval', 0), (True, time.time()+60)]:
-            self.manager.compatibility = self.pending('digest')
-            self.manager.compatibility['expires'] = expires
-            with patch('server.fetch') as fetch, self.assertRaises(ValueError):
-                self.manager.install(token)
-            fetch.assert_not_called()
-
-    def test_changed_archive_requires_new_approval(self):
-        self.release('old')
+    def test_automatic_approval_never_bypasses_archive_hash(self):
         fetch, process, digest = self.install_fixture()
-        self.manager.compatibility = self.pending('different-digest')
-        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'stop') as stop:
-            with self.assertRaisesRegex(ValueError, 'Состав обновления'):
-                self.manager.install('test-approval')
-            stop.assert_not_called()
-        self.assertEqual(self.manager.state['active'], 'old')
-
-    def test_approved_update_still_checks_hash(self):
-        fetch, process, digest = self.install_fixture()
-        self.manager.compatibility = self.pending(digest)
         with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch.object(self.manager, 'probe') as probe:
             with self.assertRaisesRegex(ValueError, 'SHA-256'):
-                self.manager.install('test-approval')
+                self.manager.install()
             probe.assert_not_called()
+
+    def up_to_date_release(self, digest=None, mode='plus', build='1000', manifest=False):
+        folder = self.base / 'releases/old'
+        folder.mkdir(exist_ok=True)
+        self.manager.state.update(active='old', previous='rollback-point')
+        metadata = {'game': '1.0.16', 'mode': mode, 'steam_build': build,
+                    'mod': '0.10.2.0' if mode == 'plus' else None, 'mod_sha256': digest}
+        server.atomic_json(folder / 'hearth.json', metadata)
+        (folder / 'valheim_server.x86_64').write_bytes(b'game fixture')
+        if manifest:
+            metadata.pop('steam_build')
+            server.atomic_json(folder / 'hearth.json', metadata)
+            (folder / 'steamapps').mkdir(exist_ok=True)
+            (folder / 'steamapps/appmanifest_896660.acf').write_text('"AppState" { "appid" "896660" "StateFlags" "4" "buildid" "'+build+'" }')
+        return folder
+
+    def test_identical_plus_skips_download_probe_backup_restart_and_client_publish(self):
+        fetch, _, digest = self.install_fixture()
+        folder = self.up_to_date_release(digest)
+        original_metadata = (folder / 'hearth.json').read_bytes()
+        original_state = dict(self.manager.state)
+        with patch('server.fetch', side_effect=fetch) as metadata, patch('server.subprocess.Popen') as download, patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe') as probe, patch.object(self.manager, 'stop') as stop, patch.object(self.manager, 'backup') as backup, patch.object(self.manager, 'start') as start, patch.object(self.manager, 'publish_client_mods') as publish, patch.object(self.manager.operations, 'notify') as notify:
+            result = self.manager.execute('install', {})
+        self.assertFalse(result['updated'])
+        self.assertIn('Обновлений нет', result['message'])
+        metadata.assert_called_once()
+        for operation in (download, probe, stop, backup, start, publish, notify):
+            operation.assert_not_called()
+        self.assertEqual(self.manager.state, original_state)
+        self.assertEqual((folder / 'hearth.json').read_bytes(), original_metadata)
+        self.assertEqual(list((self.base / 'backups').iterdir()), [])
+        self.assertEqual(list((self.base / 'releases').iterdir()), [folder])
+
+    def test_identical_vanilla_and_modded_skip_even_candidate_creation(self):
+        for mode in ('vanilla', 'modded'):
+            with self.subTest(mode=mode):
+                settings = self.manager.config.load(); settings['server']['mode'] = mode
+                server.atomic_json(self.manager.config.path, settings)
+                self.up_to_date_release(mode=mode)
+                with patch.object(self.manager.mods, 'latest_loader_version', return_value='5.4.2351'), patch.object(self.manager.mods, 'loader_info', return_value={'version':'5.4.2351'}), patch('server.fetch') as fetch, patch('server.subprocess.Popen') as download, patch.object(self.manager, 'stop') as stop:
+                    result = self.manager.install()
+                self.assertFalse(result['updated'])
+                fetch.assert_not_called(); download.assert_not_called(); stop.assert_not_called()
+
+    def test_changed_loader_version_updates_modded_even_when_steam_is_unchanged(self):
+        settings = self.manager.config.load(); settings['server']['mode'] = 'modded'
+        server.atomic_json(self.manager.config.path, settings)
+        self.up_to_date_release(mode='modded')
+        with patch.object(self.manager.mods, 'latest_loader_version', return_value='5.4.2352'), patch.object(self.manager.mods, 'loader_info', return_value={'version':'5.4.2351'}), patch('server.subprocess.Popen', side_effect=RuntimeError('download started')) as download, patch.object(self.manager, 'stop') as stop:
+            with self.assertRaisesRegex(RuntimeError, 'download started'):
+                self.manager.install()
+            download.assert_called_once(); stop.assert_not_called()
+
+    def test_legacy_metadata_uses_installed_manifest_and_invalid_manifest_cannot_skip(self):
+        fetch, process, digest = self.install_fixture()
+        folder = self.up_to_date_release(digest, manifest=True)
+        with patch('server.fetch', side_effect=fetch), patch('server.PINNED_SHA', digest), patch('server.subprocess.Popen') as download:
+            self.assertFalse(self.manager.install()['updated'])
+            download.assert_not_called()
+        (folder / 'steamapps/appmanifest_896660.acf').write_text('"AppState" { "appid" "896660" "StateFlags" "6" "buildid" "1000" }')
+        metadata = self.manager.metadata(); metadata['steam_build'] = '1000'
+        server.atomic_json(folder / 'hearth.json', metadata)
+        with patch('server.fetch', side_effect=fetch), patch('server.PINNED_SHA', digest), patch('server.subprocess.Popen', return_value=process) as download, patch.object(self.manager, 'probe', side_effect=RuntimeError('candidate checked')):
+            with self.assertRaisesRegex(RuntimeError, 'candidate checked'):
+                self.manager.install()
+            download.assert_called_once()
+
+    def test_changed_build_digest_or_mode_does_not_skip_candidate(self):
+        for build, digest_changed, current_mode in [('999', False, 'plus'), ('1000', True, 'plus'), ('1000', False, 'vanilla')]:
+            with self.subTest(build=build, digest=digest_changed, mode=current_mode):
+                fetch, process, digest = self.install_fixture()
+                self.up_to_date_release('0'*64 if digest_changed else digest, mode=current_mode, build=build)
+                with patch('server.fetch', side_effect=fetch), patch('server.PINNED_SHA', digest), patch('server.subprocess.Popen', return_value=process) as download, patch.object(self.manager, 'probe', side_effect=RuntimeError('candidate checked')), patch.object(self.manager, 'stop') as stop:
+                    with self.assertRaisesRegex(RuntimeError, 'candidate checked'):
+                        self.manager.install()
+                    download.assert_called_once(); stop.assert_not_called()
+
+    def test_missing_or_changed_downloaded_build_never_stops_working_server(self):
+        for build in (None, '1001'):
+            with self.subTest(build=build):
+                fetch, process, digest = self.install_fixture()
+                original = process.__enter__.side_effect
+                def download():
+                    result = original()
+                    for stage in (self.base / 'releases').iterdir():
+                        if not (stage / 'hearth.json').exists():
+                            manifest = stage / 'steamapps/appmanifest_896660.acf'
+                            if build is None: manifest.unlink()
+                            else: manifest.write_text('"AppState" { "appid" "896660" "StateFlags" "4" "buildid" "'+build+'" }')
+                    return result
+                process.__enter__.side_effect = download
+                with patch('server.fetch', side_effect=fetch), patch('server.PINNED_SHA', digest), patch('server.subprocess.Popen', return_value=process), patch.object(self.manager, 'stop') as stop, patch.object(self.manager, 'probe') as probe:
+                    with self.assertRaisesRegex(RuntimeError, 'сборк|Сборка'):
+                        self.manager.install()
+                    stop.assert_not_called(); probe.assert_not_called()
+
+    def test_check_failure_does_not_claim_up_to_date_or_download(self):
+        fetch, _, digest = self.install_fixture()
+        self.up_to_date_release(digest)
+        with patch('server.fetch', side_effect=fetch), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'latest_steam_build', side_effect=RuntimeError('metadata unavailable')), patch('server.subprocess.Popen') as download, patch.object(self.manager, 'stop') as stop:
+            with self.assertRaisesRegex(RuntimeError, 'metadata unavailable'):
+                self.manager.install()
+            download.assert_not_called(); stop.assert_not_called()
+
+    def test_author_compatibility_missing_or_ambiguous_is_advisory(self):
+        for body in (None, 'Valheim 1.0.15 and Valheim 1.0.16'):
+            with patch('server.fetch', return_value={'tag_name':'10.4.0.0','body':body}):
+                self.assertIsNone(self.manager.latest_release()[0])
+
+    def test_no_update_worker_preserves_clear_result_message(self):
+        result = {'updated': False, 'message': 'Обновлений нет: сервер и мод уже актуальны.'}
+        with patch.object(self.manager, 'install', return_value=result), patch.object(self.manager.operations, 'notify') as notify:
+            self.manager.submit('install')
+            with self.manager.lock: pass
+        self.assertEqual(self.manager.job, {'state':'done','message':result['message']})
+        notify.assert_not_called()
+
+    def test_probe_uses_private_config_copy_and_never_changes_original(self):
+        folder = self.base / 'releases/candidate'; folder.mkdir()
+        config = self.base / 'config/plugin/settings.cfg'; config.parent.mkdir()
+        config.write_text('enabled = true')
+        self.manager.copy_probe_config(folder)
+        copied = folder / 'BepInEx/config/plugin/settings.cfg'
+        self.assertFalse(copied.is_symlink())
+        self.assertEqual(copied.read_text(), 'enabled = true')
+        copied.write_text('changed by candidate')
+        self.assertEqual(config.read_text(), 'enabled = true')
 
     def test_failed_world_start_restores_old_release_world_and_config(self):
         self.release('old')
@@ -422,7 +529,7 @@ class CoreTests(unittest.TestCase):
             world.write_text('converted world')
             config.write_text('changed config')
             raise RuntimeError('world failed')
-        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe'), patch.object(self.manager, 'start'), patch.object(self.manager, 'wait_ready', side_effect=failed_start):
+        with patch('server.fetch', side_effect=fetch), patch('server.subprocess.Popen', return_value=process), patch('server.PINNED_SHA', digest), patch.object(self.manager, 'probe', return_value='1.0.15'), patch.object(self.manager, 'start'), patch.object(self.manager, 'wait_ready', side_effect=failed_start):
             with self.assertRaisesRegex(RuntimeError, 'автоматический откат'):
                 self.manager.install()
         self.assertEqual(self.manager.state['active'], 'old')
@@ -437,14 +544,53 @@ class CoreTests(unittest.TestCase):
 
     def test_probe_requires_ready_correct_mod_and_no_errors(self):
         lines = 'Valheim version: l-1.0.16\nBepInEx 5.4.23\nLoading [Valheim Plus 0.10.2.0]\n'
-        for output, expected in [(lines, RuntimeError), (lines+'Game server connected\n', server.CompatibilityApprovalRequired), (lines+'HarmonyException: bad patch\nGame server connected\n', RuntimeError), (lines.replace('0.10.2.0', '0.10.1.0')+'Game server connected\n', RuntimeError)]:
+        for output in [lines, lines+'HarmonyException: bad patch\nGame server connected\n', lines.replace('0.10.2.0', '0.10.1.0')+'Game server connected\n', lines+'Game server connected\n[Error : Another Mod] load failed\n']:
             process = MagicMock(stdout=io.StringIO(output))
             process.poll.return_value = None
+            process.returncode = 0
             with patch.object(self.manager, 'spawn', return_value=process), patch.object(self.manager, 'halt'):
-                with self.assertRaises(expected) as caught:
+                with self.assertRaises(RuntimeError):
                     self.manager.probe(self.base, '1.0.15', '0.10.2.0')
-                if expected is RuntimeError:
-                    self.assertNotIsInstance(caught.exception, server.CompatibilityApprovalRequired)
+
+    def test_probe_accepts_actual_version_only_after_stable_window(self):
+        process = MagicMock(stdout=io.StringIO('Valheim version: 1.0.16\nBepInEx 5.4.23\nLoading [Valheim Plus 0.10.2.0]\nGame server connected\n'))
+        process.poll.return_value = None; process.returncode = 0
+        ticks = iter(range(1000))
+        with patch.object(self.manager, 'spawn', return_value=process), patch.object(self.manager, 'halt'), patch('server.PROBE_STABLE_SECONDS', 5), patch('server.time.monotonic', side_effect=lambda: next(ticks)) as clock:
+            self.assertEqual(self.manager.probe(self.base, '1.0.15', '0.10.2.0'), '1.0.16')
+        self.assertGreaterEqual(clock.call_count, 7)
+
+    def test_probe_rejects_late_plugin_error_clean_exit_failure_and_log_failure(self):
+        output = 'Valheim version: 1.0.16\nGame server connected\n'
+        for failure in ('shutdown_log', 'exit', 'log_reader', 'hung'):
+            with self.subTest(failure=failure):
+                process = MagicMock(stdout=io.StringIO(output)); process.poll.return_value = None; process.returncode = 0
+                if failure == 'exit': process.returncode = 1
+                def halt(_):
+                    if failure == 'shutdown_log':
+                        server.observe_startup(markers, '[Error : Third Party] startup failed')
+                    elif failure == 'hung': raise RuntimeError('hung')
+                # Inject a shutdown-only error through observe_startup's shared
+                # marker dict, after the initial ready window has completed.
+                markers = {}
+                original = server.observe_startup
+                def observe(current, line):
+                    nonlocal markers
+                    markers = current
+                    return original(current, line)
+                with patch.object(self.manager, 'spawn', return_value=process), patch.object(self.manager, 'halt', side_effect=halt), patch('server.observe_startup', side_effect=observe), patch.object(self.manager, 'say', side_effect=OSError('disk full') if failure == 'log_reader' else None):
+                    with self.assertRaises(RuntimeError):
+                        self.manager.probe(self.base, None, None)
+                if failure == 'hung': process.kill.assert_called_once()
+
+    def test_maintenance_deadline_after_probe_preserves_live_release(self):
+        self.release('old')
+        fetch, process, digest = self.install_fixture()
+        with patch('server.fetch', side_effect=fetch), patch('server.PINNED_SHA', digest), patch('server.subprocess.Popen', return_value=process), patch.object(self.manager, 'probe', return_value='1.0.16'), patch.object(self.manager, 'guard_maintenance', side_effect=ValueError('deadline')), patch.object(self.manager, 'stop') as stop:
+            with self.assertRaisesRegex(ValueError, 'deadline'):
+                self.manager.install()
+            stop.assert_not_called()
+        self.assertEqual(self.manager.state['active'], 'old')
 
     def test_world_readiness_rejects_exit_errors_and_timeout(self):
         with patch.object(self.manager, 'running', return_value=False), self.assertRaises(RuntimeError):

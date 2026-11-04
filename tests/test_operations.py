@@ -58,6 +58,23 @@ class OperationsTests(unittest.TestCase):
         resumed=Operations(self.manager);resumed.tick()
         self.assertEqual(resumed.view()['maintenance']['state'],'interrupted')
         self.manager.submit.assert_not_called()
+
+    def test_unchanged_update_completes_and_returns_clear_result_to_worker(self):
+        expected={'updated':False,'message':'Обновлений нет: сервер и мод уже актуальны.'}
+        self.ops.schedule({'operation':'install','at':time.time(),'wait_empty':False})
+        self.manager.execute.return_value=expected
+        self.manager.operations=self.ops
+        with patch.object(self.ops,'notify') as notify:
+            result=server.Manager.execute(self.manager,'maintenance',{})
+        self.assertIs(result,expected)
+        self.manager.execute.assert_called_once_with('install',{})
+        self.assertEqual(self.ops.view()['maintenance']['state'],'done')
+        self.assertFalse(self.manager.maintenance_wait_empty)
+        self.assertIsNone(self.manager.maintenance_deadline)
+        messages=[call.args[1] for call in notify.call_args_list]
+        self.assertEqual(messages[-1],'Проверка обновлений завершена. '+expected['message'])
+        self.assertFalse(any('Обслуживание завершено:' in message for message in messages))
+
     def test_failed_task_is_not_retried_and_guard_resets(self):
         self.schedule(True);self.manager.running.return_value=False
         self.manager.execute.side_effect=ValueError('failed')
