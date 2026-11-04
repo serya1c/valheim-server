@@ -146,7 +146,7 @@ After setup, players visit `/`; you manage the server at `/admin`. The landing p
 
 There are two separate updates:
 
-- **Game server:** in **Updates**, use **Install latest versions**. Hearth downloads the game and the appropriate loader or Valheim Plus release, checks a trial world, and keeps a backup for rollback. If the game version differs from the one declared by V+, a successful trial allows one-time approval of that pair. Additional mods are retained; check their compatibility with the new game version.
+- **Game server:** in **Updates**, use **Check and update server**. Hearth first compares the Steam build and V+ version and SHA-256 with the installed versions; custom collections also check the BepInEx loader version. If nothing has changed, downloading and restarting are skipped. A new build runs on a temporary world; error-free startup automatically allows the update, including a game version that differs from V+'s declaration. A backup is made before switching, and main-world startup failure triggers rollback. Check gameplay and other mods in game.
 
 - **Hearth panel:** check the panel version in **Updates** to see the latest release and the suggested command. Update the project files, then rebuild with Docker Compose. The panel does not rebuild itself.
 

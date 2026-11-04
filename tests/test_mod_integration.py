@@ -157,8 +157,15 @@ class ModIntegrationTests(unittest.TestCase):
                 z.writestr('BepInExPack_Valheim/' + name, b'loader fixture')
         metadata = {'latest': {'version_number': '5.4.2351', 'dependencies': [], 'download_url': 'https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/5.4.2351/'}}
         process = MagicMock(); process.__enter__.return_value = process; process.stdout = []; process.wait.return_value = 0
+        def downloaded():
+            for stage in (self.base / 'releases').iterdir():
+                if not (stage / 'hearth.json').exists():
+                    (stage / 'steamapps').mkdir(exist_ok=True)
+                    (stage / 'steamapps/appmanifest_896660.acf').write_text('"AppState" { "appid" "896660" "StateFlags" "4" "buildid" "1000" }')
+            return process
+        process.__enter__.side_effect = downloaded
         probe = patch.object(self.manager, 'probe', side_effect=RuntimeError('candidate rejected') if probe_error else None, return_value='1.0.16')
-        with patch('mods._json', return_value=metadata), patch('mods._fetch', return_value=stream.getvalue()), patch('server.subprocess.Popen', return_value=process), probe, patch.object(self.manager, 'start'), patch.object(self.manager, 'wait_ready'):
+        with patch('mods._json', return_value=metadata), patch('mods._fetch', return_value=stream.getvalue()), patch('server.subprocess.Popen', return_value=process), probe, patch.object(self.manager, 'start'), patch.object(self.manager, 'wait_ready'), patch.object(self.manager, 'latest_steam_build', return_value='1000'):
             self.manager.install()
 
     def test_generic_loader_candidate_failure_preserves_live_cache(self):

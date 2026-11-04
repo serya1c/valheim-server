@@ -53,7 +53,7 @@ $('panel-command-copy').onclick=async()=>{const generation=operationsGeneration;
 const nextTime=new Date(Date.now()+60000);nextTime.setMinutes(nextTime.getMinutes()-nextTime.getTimezoneOffset());$('maintenance-at').value=nextTime.toISOString().slice(0,16);
 
 const routineDays=['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
-const routineReasons={deadline:'Истекло окно ожидания',missed:'Пропущено во время остановки панели',panel_restart:'Панель перезапущена',overlap:'Предыдущий запуск ещё не завершён',operation:'Ошибка операции',changed:'Расписание изменено',manual:'Отменено вручную'};
+const routineReasons={deadline:'Истекло окно ожидания',missed:'Пропущено во время остановки панели',panel_restart:'Панель перезапущена',overlap:'Предыдущий запуск ещё не завершён',operation:'Ошибка операции',changed:'Расписание изменено',manual:'Отменено вручную',no_updates:'Обновлений нет'};
 function routineTime(at,zone){
  try{return new Intl.DateTimeFormat(I18n.locale,{timeZone:zone,dateStyle:'short',timeStyle:'short'}).format(new Date(at*1000));}
  catch{return fmtTime(at);}

@@ -976,6 +976,13 @@ class ModManager:
             raise
         return loader
 
+    def latest_loader_version(self):
+        with self.lock:
+            metadata = self._metadata(LOADER_ID, prefer='thunderstore')
+            if not metadata['version_number'].startswith('5.4.'):
+                raise ValueError('Поддерживается загрузчик BepInEx версии 5.4')
+            return metadata['version_number']
+
     def ensure_loader(self, folder, refresh=False):
         with self.lock:
             loader = self._prepare_loader(refresh=refresh)

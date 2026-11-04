@@ -80,6 +80,27 @@ class RecurringTests(unittest.TestCase):
         self.ops.tick();self.ops.run_pending()
         self.assertEqual(self.manager.execute.call_count,2)
 
+    def test_unchanged_update_records_reason_and_does_not_repeat_occurrence(self):
+        routine=self.create(operation='install')
+        self.now+=3600
+        self.ops.tick()
+        expected={'updated':False,'message':'Обновлений нет: сервер и мод уже актуальны.'}
+        self.manager.execute.return_value=expected
+        with patch.object(self.ops,'notify') as notify:
+            self.assertIs(self.ops.run_pending(),expected)
+            self.assertIsNone(self.ops.run_pending())
+        self.manager.execute.assert_called_once_with('install',{})
+        view=self.ops.view()
+        self.assertEqual(view['maintenance']['state'],'done')
+        self.assertEqual(len(view['history']),1)
+        self.assertEqual((view['history'][0]['state'],view['history'][0]['reason']),('done','no_updates'))
+        updated=next(item for item in view['routines'] if item['id']==routine['id'])
+        self.assertEqual(updated['last'],view['history'][0])
+        self.assertGreater(updated['next_at'],self.now)
+        self.assertIn(expected['message'],notify.call_args.args[1])
+        self.assertFalse(self.manager.maintenance_wait_empty)
+        self.assertIsNone(self.manager.maintenance_deadline)
+
     def test_busy_or_populated_server_expires_without_execution(self):
         self.create(max_wait_minutes=2)
         self.now+=3600
