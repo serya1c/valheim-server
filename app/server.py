@@ -1100,7 +1100,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('X-Frame-Options', 'DENY')
         if not self.manager.panel.configured or self.path.startswith(('/admin', '/api/', '/health')):
             self.send_header('X-Robots-Tag', 'noindex, nofollow')
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' https://mc.yandex.ru; style-src 'self' https://mc.yandex.ru; img-src 'self' data: https://mc.yandex.ru; connect-src 'self' https://mc.yandex.ru; frame-src https://mc.yandex.ru; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         if cookie:
             self.send_header('Set-Cookie', cookie)
         self.end_headers()
