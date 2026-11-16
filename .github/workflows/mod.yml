@@ -122,39 +122,44 @@ jobs:
       - name: Упаковка встроенного мода
         run: python game-mods/ValheimAdminRu/package.py
 
-      - name: Проверка на дрейф (версия актуальна)
-        if: steps.target.outputs.refresh == 'false'
+      - name: Есть что коммитить?
+        id: diff
         run: |
-          if ! git diff --quiet -- app/builtin-mods game-mods/ValheimAdminRu; then
-            echo "Собранный архив расходится с закоммиченным:"
-            git diff --stat
-            exit 1
+          if git diff --quiet -- app/builtin-mods game-mods/ValheimAdminRu; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Архив и исходники совпадают — обновлять нечего."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Расхождения с закоммиченным состоянием:"
+            git diff --stat -- app/builtin-mods game-mods/ValheimAdminRu
           fi
-          echo "Архив воспроизводится байт-в-байт."
 
-      - name: Ветка и PR под новую версию игры
-        if: steps.target.outputs.refresh == 'true'
+      - name: Ветка и PR с пересобранным модом
+        if: steps.diff.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GAME: ${{ steps.game.outputs.version }}
         run: |
           set -euo pipefail
           mod=$(grep -oP '<Version>\K[^<]+' game-mods/ValheimAdminRu/ValheimAdminRu.csproj | head -1)
-          branch="automation/admin-mod-v$mod"
+          branch="automation/admin-mod-${GAME}-v${mod}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$branch"
           git add app/builtin-mods game-mods/ValheimAdminRu
           git commit -m "mod: Hearth Admin $mod для Valheim $GAME"
           git push -f origin "$branch"
-          gh pr create --base main --head "$branch" \
-            --title "Hearth Admin $mod для Valheim $GAME" \
-            --body "Автоматическая пересборка встроенного мода под сборку Valheim $GAME.
-
-          Собрано против актуального выделенного сервера (app $VALHEIM_APP_ID) и BepInExPack_Valheim.
-          Обновлены: GameCompatibility (BuildVersion + allowlist), версия мода, app/builtin-mods/ValheimAdminRu.zip и .json.
-
-          После мержа мод появится в панели как обновление встроенного пакета." \
+          if [ "$GAME" = "${{ steps.target.outputs.src }}" ]; then
+            title="Hearth Admin $mod: свежая сборка встроенного архива"
+            body="Автоматическая пересборка под Valheim $GAME.
+          Версия игры не менялась, но собранный архив отличался от закоммиченного
+          (встроенный мод отставал от исходников). Обновлены app/builtin-mods/ValheimAdminRu.zip и .json."
+          else
+            title="Hearth Admin $mod для Valheim $GAME"
+            body="Автоматическая пересборка встроенного мода под новую сборку Valheim $GAME.
+          Обновлены GameCompatibility (BuildVersion + allowlist), версия мода и встроенный архив."
+          fi
+          gh pr create --base main --head "$branch" --title "$title" --body "$body" \
             || echo "PR уже существует — ветка обновлена."
 
       - uses: actions/upload-artifact@v4
