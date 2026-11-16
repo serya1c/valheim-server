@@ -1,0 +1,107 @@
+name: Release
+
+# Лаунчер и установщики пересобираются только при изменении их исходников
+# (и при пуше тега v*). Артефакты кладутся в релиз.
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'launcher/**'
+      - 'installer/**'
+      - 'installer-linux/**'
+      - 'installer-tests/**'
+      - 'game-mods/ValheimAdminRu/**'
+      - '.github/workflows/release.yml'
+    tags:
+      - 'v*'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  launcher:
+    name: Лаунчер (Windows + Linux + setup)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Зависимости Avalonia
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1
+      - name: Сборка лаунчера
+        run: bash launcher/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: launcher-assets
+          path: launcher/.build/assets/*
+          if-no-files-found: error
+
+  installer-windows:
+    name: Установщик модов (Windows)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Публикация Loki-Mod-Installer.exe
+        run: |
+          set -euo pipefail
+          dotnet publish installer/LokiInstaller.csproj -c Release -r win-x64 --self-contained true \
+            -p:EnableWindowsTargeting=true -o "$RUNNER_TEMP/installer"
+          mkdir -p dist
+          cp "$RUNNER_TEMP/installer/Loki-Mod-Installer.exe" dist/
+          cd dist
+          sha256sum Loki-Mod-Installer.exe > Loki-Mod-Installer.exe.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-windows
+          path: dist/*
+          if-no-files-found: error
+
+  installer-linux:
+    name: Установщик модов (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Сборка Loki-Mod-Installer-Linux.sh
+        run: |
+          set -euo pipefail
+          python installer-linux/build.py
+          mkdir -p dist
+          cp app/downloads/Loki-Mod-Installer-Linux.sh* dist/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-linux
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Публикация релиза
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [ launcher, installer-windows, installer-linux ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: gh release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          ls -l dist
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
+          gh release upload "$TAG" dist/* --clobber

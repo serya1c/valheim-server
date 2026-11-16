@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python (панель)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Зависимости
+        run: python -m pip install --upgrade pip python-a2s==1.4.1
+      - name: unittest
+        env:
+          PYTHONPATH: app
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+
+  node:
+    name: JS (статические страницы и i18n)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: node tests
+        run: |
+          set -e
+          for f in tests/*.cjs; do echo "== $f"; node "$f"; done
+
+  dotnet:
+    name: .NET тесты (лаунчер, установщик, мод)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Locale tests (мод)
+        run: dotnet run --project game-mods/ValheimAdminRu/tests/LocaleTests.csproj -c Release
+      - name: Bridge tests (мод)
+        run: dotnet run --project game-mods/ValheimAdminRu/tests/BridgeTests.csproj -c Release
+      - name: Launcher tests
+        run: dotnet run --project launcher/tests/Launcher.Tests.csproj -c Release
+      - name: Launcher setup tests
+        run: dotnet run --project launcher/setup-tests/Setup.Tests.csproj -c Release
+      - name: Installer tests
+        run: dotnet run --project installer-tests/Tests.csproj -c Release

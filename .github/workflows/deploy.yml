@@ -1,0 +1,55 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Деплой, даже если текущий контейнер не healthy'
+        type: boolean
+        default: false
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+
+concurrency:
+  group: deploy-valheim
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Пересборка и перезапуск на HASTRII
+    # Self-hosted раннер на HASTRII: облачный не видит 192.168.0.105,
+    # а пересоздание контейнера требует доступа к docker хоста.
+    runs-on: [self-hosted, hastrii, valheim]
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stage
+        run: rsync -a --delete --exclude='.git' ./ /tmp/valheim-incoming/
+
+      - name: Deploy (build + restart, откат при неудаче)
+        run: |
+          if [ "${{ inputs.force }}" = "true" ]; then
+            sudo -n /usr/local/bin/deploy-valheim --force
+          else
+            sudo -n /usr/local/bin/deploy-valheim
+          fi
+
+      - name: Verify
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 5 http://127.0.0.1:8080/health >/dev/null; then
+              echo "health OK"; curl -fsS http://127.0.0.1:8080/health; exit 0
+            fi
+            sleep 5
+          done
+          echo "health-check не прошёл"
+          docker ps --filter name=valheim-server --format '{{.Names}} {{.Status}}' || true
+          docker logs --tail 50 valheim-server-valheim-1 || true
+          exit 1

@@ -1,0 +1,164 @@
+name: Admin mod
+
+# Пересборка встроенного Hearth Admin под актуальную сборку Valheim.
+# Если игра обновилась — мод пересобирается, версия бампается,
+# allowlist версий дополняется и открывается PR в main.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * *'   # ежедневно 03:00 UTC
+  push:
+    branches: [ main ]
+    paths:
+      - 'game-mods/ValheimAdminRu/**'
+      - 'tools/game-version/**'
+      - '.github/workflows/mod.yml'
+
+concurrency:
+  group: mod-refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  VALHEIM_APP_ID: '896660'
+  GAME_DIR: ${{ github.workspace }}/.valheim
+  BEPINEX_DIR: ${{ github.workspace }}/.bepinex
+
+jobs:
+  rebuild:
+    name: Сборка мода под текущую игру
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Текущая сборка Valheim в Steam
+        id: steam
+        run: |
+          build=$(curl -fsS "https://api.steampowered.com/ISteamApps/UpToDateCheck/v1/?appid=$VALHEIM_APP_ID&version=0" | jq -r .response.required_version)
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          echo "Steam build: $build"
+
+      - name: Кэш серверных файлов Valheim
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.GAME_DIR }}
+          key: valheim-${{ steps.steam.outputs.build }}-v1
+
+      - name: SteamCMD
+        run: |
+          set -euo pipefail
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends lib32gcc-s1 lib32stdc++6 ca-certificates
+          if ! command -v steamcmd >/dev/null; then
+            mkdir -p "$HOME/steamcmd"
+            curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz | tar -xz -C "$HOME/steamcmd"
+            echo "STEAMCMD=$HOME/steamcmd/steamcmd.sh" >> "$GITHUB_ENV"
+          else
+            echo "STEAMCMD=steamcmd" >> "$GITHUB_ENV"
+          fi
+
+      - name: Выделенный сервер Valheim
+        run: |
+          set -euo pipefail
+          "$STEAMCMD" +force_install_dir "$GAME_DIR" +login anonymous +app_update "$VALHEIM_APP_ID" validate +quit
+          test -f "$GAME_DIR/valheim_Data/Managed/assembly_valheim.dll"
+
+      - name: BepInExPack с Thunderstore
+        run: |
+          set -euo pipefail
+          version=$(curl -fsS https://thunderstore.io/api/experimental/package/denikson/BepInExPack_Valheim/ | jq -r .latest.version_number)
+          echo "BepInExPack_Valheim $version"
+          mkdir -p "$BEPINEX_DIR"
+          curl -fsSL -o "$RUNNER_TEMP/bepinex.zip" "https://thunderstore.io/package/download/denikson/BepInExPack_Valheim/$version/"
+          unzip -q -o "$RUNNER_TEMP/bepinex.zip" -d "$BEPINEX_DIR"
+          test -f "$BEPINEX_DIR/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
+
+      - name: Версия игры из сборки
+        id: game
+        run: |
+          set -euo pipefail
+          version=$(dotnet run --project tools/game-version -c Release -- "$GAME_DIR/valheim_Data/Managed/assembly_valheim.dll" | tail -1)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Valheim: $version"
+
+      - name: Мод уже собран под эту версию?
+        id: target
+        run: |
+          set -euo pipefail
+          current=$(python game-mods/ValheimAdminRu/target_game.py --read)
+          echo "src=$current" >> "$GITHUB_OUTPUT"
+          echo "В коде: $current, в Steam: ${{ steps.game.outputs.version }}"
+          if [ "$current" = "${{ steps.game.outputs.version }}" ]; then
+            echo "refresh=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "refresh=true" >> "$GITHUB_OUTPUT"
+            python game-mods/ValheimAdminRu/target_game.py --set "${{ steps.game.outputs.version }}"
+          fi
+
+      - name: Сборка плагина
+        run: |
+          set -euo pipefail
+          dotnet build game-mods/ValheimAdminRu/ValheimAdminRu.csproj -c Release --nologo \
+            -p:ValheimDir="$GAME_DIR" \
+            -p:ManagedDir="$GAME_DIR/valheim_Data/Managed" \
+            -p:BepInExCore="$BEPINEX_DIR/BepInExPack_Valheim/BepInEx/core"
+
+      - name: Упаковка встроенного мода
+        run: python game-mods/ValheimAdminRu/package.py
+
+      - name: Проверка на дрейф (версия актуальна)
+        if: steps.target.outputs.refresh == 'false'
+        run: |
+          if ! git diff --quiet -- app/builtin-mods game-mods/ValheimAdminRu; then
+            echo "Собранный архив расходится с закоммиченным:"
+            git diff --stat
+            exit 1
+          fi
+          echo "Архив воспроизводится байт-в-байт."
+
+      - name: Ветка и PR под новую версию игры
+        if: steps.target.outputs.refresh == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GAME: ${{ steps.game.outputs.version }}
+        run: |
+          set -euo pipefail
+          mod=$(grep -oP '<Version>\K[^<]+' game-mods/ValheimAdminRu/ValheimAdminRu.csproj | head -1)
+          branch="automation/admin-mod-v$mod"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
+          git add app/builtin-mods game-mods/ValheimAdminRu
+          git commit -m "mod: Hearth Admin $mod для Valheim $GAME"
+          git push -f origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "Hearth Admin $mod для Valheim $GAME" \
+            --body "Автоматическая пересборка встроенного мода под сборку Valheim $GAME.
+
+          Собрано против актуального выделенного сервера (app $VALHEIM_APP_ID) и BepInExPack_Valheim.
+          Обновлены: GameCompatibility (BuildVersion + allowlist), версия мода, app/builtin-mods/ValheimAdminRu.zip и .json.
+
+          После мержа мод появится в панели как обновление встроенного пакета." \
+            || echo "PR уже существует — ветка обновлена."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hearth-admin-mod
+          path: |
+            app/builtin-mods/ValheimAdminRu.zip
+            app/builtin-mods/ValheimAdminRu.json
