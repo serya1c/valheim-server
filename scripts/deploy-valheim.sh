@@ -1,22 +1,30 @@
 #!/usr/bin/env bash
-# Деплой панели Valheim (Hearth) из /tmp/valheim-incoming в /data/valheim-server.
-# Устанавливается как /usr/local/bin/deploy-valheim (root:root, 0755) на HASTRII.
-# Ставится из репозитория (scripts/deploy-valheim.sh) на HASTRII.
-# Разрешается в sudoers только для пользователя раннера GitHub Actions.
+# Деплой панели Valheim (Hearth): бэкап исходников -> сборка образа ->
+# пересоздание контейнера -> ожидание health -> откат на предыдущий образ,
+# если health не поднялся. Том с миром и настройками не трогается,
+# `down -v` не используется.
 #
-# Что делает: бэкап исходников -> сборка образа -> пересоздание контейнера ->
-# ожидание /health -> откат на предыдущий образ, если health не поднялся.
-# Том game (мир, настройки, моды) не трогается. down -v не используется.
+# Пути и имена не зашиты: берутся из окружения, дефолты — обычная установка.
+#   VALHEIM_STAGING   каталог со свежими исходниками   (/tmp/valheim-incoming)
+#   VALHEIM_DST       каталог проекта (build context)  (/data/valheim-server)
+#   VALHEIM_PROJECT   имя проекта Compose              (valheim-server)
+#   VALHEIM_SERVICE   имя сервиса Compose              (valheim)
+#   VALHEIM_BACKUPS   каталог бэкапов исходников       (/var/backups/valheim)
+#   VALHEIM_HEALTH    URL проверки                     (http://127.0.0.1:8080/health)
 #
-# Флаг --force: продолжить, если старый контейнер уже нездоров.
+# Устанавливается как /usr/local/bin/deploy-valheim (root:root, 0755);
+# в sudoers разрешается только пользователю раннера GitHub Actions.
+# Флаг --force: продолжать, даже если текущий контейнер нездоров.
 set -euo pipefail
 
-SRC=/tmp/valheim-incoming
-DST=/data/valheim-server
-PROJECT=valheim-server
-SERVICE=valheim
+SRC=${VALHEIM_STAGING:-/tmp/valheim-incoming}
+DST=${VALHEIM_DST:-/data/valheim-server}
+PROJECT=${VALHEIM_PROJECT:-valheim-server}
+SERVICE=${VALHEIM_SERVICE:-valheim}
+BACKUP_DIR=${VALHEIM_BACKUPS:-/var/backups/valheim}
+HEALTH_URL=${VALHEIM_HEALTH:-http://127.0.0.1:8080/health}
 IMAGE=$PROJECT-$SERVICE
-BACKUP_DIR=/var/backups/valheim
+CONTAINER=$IMAGE-1
 STAMP=$(date +%Y%m%d-%H%M%S)
 FORCE=0
 [ "${1:-}" = "--force" ] && FORCE=1
@@ -29,10 +37,10 @@ log() { echo "[deploy-valheim $(date +%H:%M:%S)] $*"; }
 [ -f "$SRC/app/server.py" ] || { echo "staging: нет app/server.py — отказ" >&2; exit 4; }
 [ -d "$DST" ] || { echo "$DST missing" >&2; exit 5; }
 
-old_health=$(docker inspect -f '{{.State.Health.Status}}' "$PROJECT-$SERVICE-1" 2>/dev/null || echo "none")
-log "текущий health: $old_health"
+old_health=$(docker inspect -f '{{.State.Health.Status}}' "$CONTAINER" 2>/dev/null || echo "none")
+log "контейнер $CONTAINER, текущий health: $old_health"
 if [ "$old_health" != "healthy" ] && [ "$FORCE" != 1 ]; then
-    echo "контейнер не healthy ($old_health). Перезапуск игрового сервера без --force запрещён." >&2
+    echo "контейнер не healthy ($old_health). Перезапуск без --force запрещён." >&2
     exit 6
 fi
 
@@ -67,7 +75,7 @@ docker compose -p "$PROJECT" -f compose.yaml up -d --remove-orphans
 
 log "ожидание health (до 180 с)"
 for _ in $(seq 1 36); do
-    if curl -fsS --max-time 5 http://127.0.0.1:8080/health >/dev/null 2>&1; then
+    if curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null 2>&1; then
         log "deployed OK, health отвечает"
         ls -1t "$BACKUP_DIR"/source-*.tgz | tail -n +4 | xargs -r rm -f
         exit 0
@@ -76,7 +84,7 @@ for _ in $(seq 1 36); do
 done
 
 log "health не поднялся — откат"
-docker logs --tail 80 "$PROJECT-$SERVICE-1" 2>&1 || true
+docker logs --tail 80 "$CONTAINER" 2>&1 || true
 if [ -n "$prev_image" ]; then
     docker tag "$prev_image" "$IMAGE"
     docker compose -p "$PROJECT" -f compose.yaml up -d --force-recreate

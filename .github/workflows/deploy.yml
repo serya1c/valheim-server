@@ -9,8 +9,8 @@ on:
         default: false
   push:
     branches: [ main ]
-    # Перезапуск игрового сервера только когда меняется то, что реально
-    # попадает в образ. Коммиты в docs или workflows игру не трогают.
+    # Перезапуск игрового сервера только когда меняется то, что попадает
+    # в образ. Коммиты в docs, workflows и хост-скрипты игру не трогают.
     paths:
       - 'app/**'
       - 'Dockerfile'
@@ -18,8 +18,6 @@ on:
       - 'compose.yaml'
       - 'compose.second.yaml'
       - 'game-mods/**'
-      - 'scripts/deploy-valheim.sh'
-      - '.github/workflows/deploy.yml'
 
 concurrency:
   group: deploy-valheim
@@ -28,12 +26,15 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # Только порт проверки: пути, имена проекта и контейнера знает deploy-valheim.
+  HEALTH_URL: http://127.0.0.1:8080/health
+
 jobs:
   deploy:
-    name: Пересборка и перезапуск на HASTRII
-    # Self-hosted раннер на HASTRII: облачный не видит 192.168.0.105,
-    # а пересоздание контейнера требует доступа к docker хоста.
-    runs-on: [self-hosted, hastrii, valheim]
+    name: Пересборка и перезапуск
+    # Self-hosted раннер: облачный раннер не видит приватную сеть хоста.
+    runs-on: [self-hosted, valheim]
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -52,12 +53,11 @@ jobs:
       - name: Verify
         run: |
           for i in $(seq 1 30); do
-            if curl -fsS --max-time 5 http://127.0.0.1:8080/health >/dev/null; then
-              echo "health OK"; curl -fsS http://127.0.0.1:8080/health; exit 0
+            if curl -fsS --max-time 5 "$HEALTH_URL" >/dev/null; then
+              echo "health OK"; curl -fsS "$HEALTH_URL"; exit 0
             fi
             sleep 5
           done
           echo "health-check не прошёл"
-          docker ps --filter name=valheim-server --format '{{.Names}} {{.Status}}' || true
-          docker logs --tail 50 valheim-server-valheim-1 || true
+          docker ps --format '{{.Names}} {{.Status}}' | head -20 || true
           exit 1
