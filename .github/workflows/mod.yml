@@ -64,9 +64,19 @@ jobs:
       - name: Выделенный сервер Valheim
         run: |
           set -uo pipefail
-          # steamcmd возвращает 1 и после успешной установки — проверяем файлы.
-          "$STEAMCMD" +force_install_dir "$GAME_DIR" +login anonymous +app_update "$VALHEIM_APP_ID" validate +quit || true
-          test -f "$GAME_DIR/valheim_Data/Managed/assembly_valheim.dll"
+          # steamcmd отдаёт код 1 и при успехе, и при сбое загрузки конфигурации
+          # (лечится sSteamCmdForcePlatformType). Проверяем результат по файлам.
+          for attempt in 1 2 3; do
+            "$STEAMCMD" +@sSteamCmdForcePlatformType linux \
+              +force_install_dir "$GAME_DIR" +login anonymous \
+              +app_update "$VALHEIM_APP_ID" validate +quit || true
+            if [ -f "$GAME_DIR/valheim_server_Data/Managed/assembly_valheim.dll" ]; then
+              echo "попытка $attempt: сервер скачан"
+              break
+            fi
+            echo "попытка $attempt не удалась, пауза"; sleep 15
+          done
+          test -f "$GAME_DIR/valheim_server_Data/Managed/assembly_valheim.dll"
           echo "server files: $(du -sh "$GAME_DIR" | cut -f1)"
 
       - name: BepInExPack с Thunderstore
@@ -83,7 +93,7 @@ jobs:
         id: game
         run: |
           set -euo pipefail
-          version=$(dotnet run --project tools/game-version -c Release -- "$GAME_DIR/valheim_Data/Managed/assembly_valheim.dll" | tail -1)
+          version=$(dotnet run --project tools/game-version -c Release -- "$GAME_DIR/valheim_server_Data/Managed/assembly_valheim.dll" | tail -1)
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Valheim: $version"
 
@@ -106,7 +116,7 @@ jobs:
           set -euo pipefail
           dotnet build game-mods/ValheimAdminRu/ValheimAdminRu.csproj -c Release --nologo \
             -p:ValheimDir="$GAME_DIR" \
-            -p:ManagedDir="$GAME_DIR/valheim_Data/Managed" \
+            -p:ManagedDir="$GAME_DIR/valheim_server_Data/Managed" \
             -p:BepInExCore="$BEPINEX_DIR/BepInExPack_Valheim/BepInEx/core"
 
       - name: Упаковка встроенного мода

@@ -67,5 +67,8 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
+      - name: Официальный WindowsClient.zip (нужен тесту для SHA256 и DLL)
+        run: |
+          curl -fsSL -o "$env:RUNNER_TEMP\WindowsClient.zip" "https://github.com/Grantapher/ValheimPlus/releases/download/0.10.2.0/WindowsClient.zip"
       - name: Installer tests
-        run: dotnet run --project installer-tests/Tests.csproj -c Release
+        run: dotnet run --project installer-tests/Tests.csproj -c Release -- "$env:RUNNER_TEMP\WindowsClient.zip"
