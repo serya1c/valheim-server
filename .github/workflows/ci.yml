@@ -43,8 +43,8 @@ jobs:
           for f in tests/*.cjs; do echo "== $f"; node "$f"; done
 
   dotnet:
-    name: .NET тесты (лаунчер, установщик, мод)
-    runs-on: windows-latest
+    name: .NET тесты (мод и лаунчер)
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
@@ -58,5 +58,14 @@ jobs:
         run: dotnet run --project launcher/tests/Launcher.Tests.csproj -c Release
       - name: Launcher setup tests
         run: dotnet run --project launcher/setup-tests/Setup.Tests.csproj -c Release
+
+  dotnet-windows:
+    name: .NET тесты установщика (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
       - name: Installer tests
         run: dotnet run --project installer-tests/Tests.csproj -c Release

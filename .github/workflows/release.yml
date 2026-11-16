@@ -35,6 +35,11 @@ jobs:
           dotnet-version: '10.0.x'
       - name: Зависимости Avalonia
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libfontconfig1
+      - name: Синхронизация lock-файлов
+        run: |
+          set -euo pipefail
+          dotnet restore launcher/HearthLauncher.csproj --configfile launcher/NuGet.Config --force-evaluate
+          dotnet restore launcher/setup/HearthLauncherSetup.csproj --configfile launcher/NuGet.Config --force-evaluate
       - name: Сборка лаунчера
         run: bash launcher/build.sh
       - uses: actions/upload-artifact@v4

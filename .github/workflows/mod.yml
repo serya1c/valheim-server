@@ -45,19 +45,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Текущая сборка Valheim в Steam
-        id: steam
-        run: |
-          build=$(curl -fsS "https://api.steampowered.com/ISteamApps/UpToDateCheck/v1/?appid=$VALHEIM_APP_ID&version=0" | jq -r .response.required_version)
-          echo "build=$build" >> "$GITHUB_OUTPUT"
-          echo "Steam build: $build"
-
-      - name: Кэш серверных файлов Valheim
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.GAME_DIR }}
-          key: valheim-${{ steps.steam.outputs.build }}-v1
-
+      # Публичный UpToDateCheck не отдаёт 896660, а выделенный сервер
+      # скачивается примерно за минуту — кэш не нужен и только врёт при апдейте.
       - name: SteamCMD
         run: |
           set -euo pipefail
@@ -74,9 +63,11 @@ jobs:
 
       - name: Выделенный сервер Valheim
         run: |
-          set -euo pipefail
-          "$STEAMCMD" +force_install_dir "$GAME_DIR" +login anonymous +app_update "$VALHEIM_APP_ID" validate +quit
+          set -uo pipefail
+          # steamcmd возвращает 1 и после успешной установки — проверяем файлы.
+          "$STEAMCMD" +force_install_dir "$GAME_DIR" +login anonymous +app_update "$VALHEIM_APP_ID" validate +quit || true
           test -f "$GAME_DIR/valheim_Data/Managed/assembly_valheim.dll"
+          echo "server files: $(du -sh "$GAME_DIR" | cut -f1)"
 
       - name: BepInExPack с Thunderstore
         run: |
