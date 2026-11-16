@@ -89,11 +89,11 @@ jobs:
           unzip -q -o "$RUNNER_TEMP/bepinex.zip" -d "$BEPINEX_DIR"
           test -f "$BEPINEX_DIR/BepInExPack_Valheim/BepInEx/core/BepInEx.dll"
 
-      - name: Версия игры из сборки
+      - name: Версия игры из лога сервера
         id: game
         run: |
           set -euo pipefail
-          version=$(dotnet run --project tools/game-version -c Release -- "$GAME_DIR/valheim_server_Data/Managed/assembly_valheim.dll" | tail -1)
+          version=$(bash tools/game-version/probe.sh "$GAME_DIR" 150)
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "Valheim: $version"
 
