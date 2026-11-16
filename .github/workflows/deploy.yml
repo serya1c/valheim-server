@@ -9,9 +9,17 @@ on:
         default: false
   push:
     branches: [ main ]
-    paths-ignore:
-      - 'docs/**'
-      - '**.md'
+    # Перезапуск игрового сервера только когда меняется то, что реально
+    # попадает в образ. Коммиты в docs или workflows игру не трогают.
+    paths:
+      - 'app/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'compose.yaml'
+      - 'compose.second.yaml'
+      - 'game-mods/**'
+      - 'scripts/deploy-valheim.sh'
+      - '.github/workflows/deploy.yml'
 
 concurrency:
   group: deploy-valheim
