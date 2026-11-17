@@ -43,6 +43,10 @@ PINNED_SHA = '4f990653dba255cacd13f60c08fc17dc0cde0fb90f200743ecb90593d34070c2'
 VERSION = re.compile(r'\d+\.\d+\.\d+(?:\.\d+)?')
 GAME_LOG_VERSION = re.compile(r'Valheim version:\s*(?:[A-Za-z]-)?(\d+\.\d+\.\d+)')
 STARTUP_ERROR = re.compile(r'HarmonyException|MissingMethodException|MissingFieldException|TypeLoadException|\b[\w.]*Exception\s*:|\[(?:Error|Fatal)\b[^\]]*\]', re.I)
+# Valheim 1.0.21 ships valheim_server_Data/Plugins/libparty.so, while PlayFab
+# Party P/Invokes "libParty.so": on Linux the case mismatch logs a benign
+# DllNotFoundException that both the live server and the probe survive.
+STARTUP_NOISE = re.compile(r'DllNotFoundException: libParty\.so\b', re.I)
 PROBE_STABLE_SECONDS = 5
 
 
@@ -57,7 +61,7 @@ def observe_startup(markers, line):
         markers['bepinex'] = True
     if 'Game server connected' in line:
         markers['ready'] = True
-    if STARTUP_ERROR.search(line):
+    if STARTUP_ERROR.search(line) and not STARTUP_NOISE.search(line):
         markers['error'] = line[-1000:]
 
 

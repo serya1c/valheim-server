@@ -560,6 +560,26 @@ class CoreTests(unittest.TestCase):
             self.assertEqual(self.manager.probe(self.base, '1.0.15', '0.10.2.0'), '1.0.16')
         self.assertGreaterEqual(clock.call_count, 7)
 
+    def test_startup_ignores_playfab_party_noise_but_not_other_library_errors(self):
+        # Valheim 1.0.21 ships libparty.so while PlayFab Party asks for
+        # libParty.so: the case mismatch logs a benign DllNotFoundException.
+        markers = {}
+        server.observe_startup(markers, 'DllNotFoundException: libParty.so assembly:<unknown assembly> type:<unknown type> member:(null)\n')
+        self.assertNotIn('error', markers)
+        server.observe_startup(markers, 'DllNotFoundException: libOther.so assembly:<unknown assembly>\n')
+        self.assertIn('error', markers)
+
+    def test_probe_accepts_playfab_party_noise_as_healthy_startup(self):
+        lines = ('Valheim version: 1.0.21\nBepInEx 5.4.23\nLoading [Valheim Plus 10.4.0.0]\n'
+                 'DllNotFoundException: libParty.so assembly:<unknown assembly> type:<unknown type> member:(null)\n'
+                 '  at (wrapper managed-to-native) PartyCSharpSDK.Interop.PFPInterop.PartyInitialize(byte[],PartyCSharpSDK.Interop.PARTY_HANDLE&)\n'
+                 'Game server connected\n')
+        process = MagicMock(stdout=io.StringIO(lines))
+        process.poll.return_value = None; process.returncode = 0
+        ticks = iter(range(1000))
+        with patch.object(self.manager, 'spawn', return_value=process), patch.object(self.manager, 'halt'), patch('server.PROBE_STABLE_SECONDS', 5), patch('server.time.monotonic', side_effect=lambda: next(ticks)):
+            self.assertEqual(self.manager.probe(self.base, '1.0.21', '10.4.0.0'), '1.0.21')
+
     def test_probe_rejects_late_plugin_error_clean_exit_failure_and_log_failure(self):
         output = 'Valheim version: 1.0.16\nGame server connected\n'
         for failure in ('shutdown_log', 'exit', 'log_reader', 'hung'):
