@@ -1,11 +1,12 @@
 {
   "id": "Hearth-ValheimAdmin",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "games": [
     "1.0.16",
     "1.0.17",
     "1.0.20",
-    "1.0.21"
+    "1.0.21",
+    "1.0.30"
   ],
-  "sha256": "f4828391cb61ba1f0c42c8229ee9268db2d71790d1b32d05ad201d251fb16114"
+  "sha256": "f206564869e3ec62ad3d6c67e2b59bd3be807ffd92517a8fda8cd5c8519ea2de"
 }
