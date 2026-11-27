@@ -22,6 +22,9 @@ concurrency:
 
 permissions:
   contents: write
+  # gh release create --generate-notes читает PR и коммиты: без этого права
+  # шаг публикации падает с "Resource not accessible by integration".
+  pull-requests: read
 
 jobs:
   launcher:
@@ -108,5 +111,9 @@ jobs:
         run: |
           set -euo pipefail
           ls -l dist
-          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            # Заметки генерирует GitHub; если это недоступно, релиз всё равно создаём.
+            gh release create "$TAG" --title "$TAG" --generate-notes \
+              || gh release create "$TAG" --title "$TAG" --notes "Сборки лаунчера и установщиков для $TAG."
+          fi
           gh release upload "$TAG" dist/* --clobber
