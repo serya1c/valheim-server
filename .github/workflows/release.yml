@@ -100,6 +100,9 @@ jobs:
     needs: [ launcher, installer-windows, installer-linux ]
     runs-on: ubuntu-latest
     steps:
+      # gh release create определяет репозиторий по git remote: без checkout
+      # шаг падал с "failed to run git: not a git repository".
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
@@ -113,15 +116,15 @@ jobs:
           ls -l dist
           gh --version || true
           gh auth status || true
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Релиз $TAG уже существует."
-          elif out=$(gh release create "$TAG" --title "$TAG" --generate-notes 2>&1); then
+          elif out=$(gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes 2>&1); then
             echo "$out"
           else
             echo "::error::gh release create --generate-notes: $(echo "$out" | tail -20)"
-            if ! out=$(gh release create "$TAG" --title "$TAG" --notes "Сборки лаунчера и установщиков для $TAG." 2>&1); then
+            if ! out=$(gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "Сборки лаунчера и установщиков для $TAG." 2>&1); then
               echo "::error::gh release create --notes: $(echo "$out" | tail -20)"
               exit 1
             fi
           fi
-          gh release upload "$TAG" dist/* --clobber
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/* --clobber
