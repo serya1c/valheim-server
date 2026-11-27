@@ -5,6 +5,7 @@ import http.client
 import io
 import json
 from pathlib import Path
+import re
 import sys
 import tempfile
 import tarfile
@@ -22,6 +23,16 @@ import server
 STEAM = '76561198000000001'
 OTHER = '76561198000000002'
 SESSION = 'a' * 32
+MOD_COMPAT = Path(__file__).resolve().parents[1] / 'game-mods/ValheimAdminRu/src/GameCompatibility.cs'
+
+
+def mod_compatibility():
+    """Allowlist straight from the mod sources: the automation workflow edits it."""
+    source = MOD_COMPAT.read_text(encoding='utf-8')
+    block = re.search(r'SupportedVersions\s*=\s*\{([^}]+)\}', source)
+    build = re.search(r'BuildVersion\s*=\s*"([^"]+)"', source)
+    assert block and build, 'GameCompatibility.cs lost its allowlist'
+    return re.findall(r'"([^"]+)"', block.group(1)), build.group(1)
 
 
 class GameAdminTests(unittest.TestCase):
@@ -182,7 +193,13 @@ class GameAdminTests(unittest.TestCase):
     def test_bundled_artifact_contains_only_plugin_and_public_metadata(self):
         info = game_admin.builtin_info()
         self.assertIsNotNone(info)
-        self.assertEqual(info['games'], ['1.0.16', '1.0.17', '1.0.20', '1.0.21'])
+        # The allowlist follows the game, and the mod workflow rewrites it: check
+        # that the packaged descriptor matches the sources instead of pinning it.
+        games, build = mod_compatibility()
+        self.assertTrue(games)
+        self.assertEqual(info['games'], games)
+        self.assertEqual(len(games), len(set(games)))
+        self.assertEqual(games[-1], build)
         self.assertEqual(hashlib.sha256(game_admin.BUNDLE.read_bytes()).hexdigest(), info['sha256'])
         with zipfile.ZipFile(game_admin.BUNDLE) as archive:
             self.assertEqual(set(archive.namelist()), {'BepInEx/plugins/ValheimAdminRu/ValheimAdminRu.dll', 'manifest.json', 'README.md'})
@@ -202,7 +219,9 @@ class GameAdminTests(unittest.TestCase):
         server.atomic_json(self.manager.active() / 'hearth.json', {'mode': 'plus', 'game': '1.0.21', 'mod': '10.4.0.0'})
         self.manager.publish_client_mods()
         previous_revision = self.manager.public_client_mods()['revision']
-        self.assertEqual(self.manager.public_client_mods()['packages'][0]['version'], '0.4.1')
+        previous_version = self.manager.public_client_mods()['packages'][0]['version']
+        current_version = game_admin.builtin_info()['version']
+        self.assertNotEqual(previous_version, current_version)
         config = self.base / 'config/ValheimAdminRu/roles.xml'
         config.parent.mkdir(parents=True)
         config.write_text('<roles/>')
@@ -210,9 +229,9 @@ class GameAdminTests(unittest.TestCase):
         package = self.manager.mods.view()['packages'][0]
         self.assertEqual(package['source'], 'builtin')
         self.assertEqual(package['version'], game_admin.builtin_info()['version'])
-        self.assertEqual(package['version'], '0.4.2')
+        self.assertEqual(package['version'], current_version)
         self.assertNotEqual(self.manager.public_client_mods()['revision'], previous_revision)
-        self.assertEqual(self.manager.public_client_mods()['packages'][0]['version'], '0.4.2')
+        self.assertEqual(self.manager.public_client_mods()['packages'][0]['version'], current_version)
         installed = next((self.manager.active() / 'BepInEx/plugins/HearthMods').rglob('ValheimAdminRu.dll')).read_bytes()
         with zipfile.ZipFile(self.base / 'client-mods.zip') as archive:
             path = next(name for name in archive.namelist() if name.endswith('ValheimAdminRu.dll'))

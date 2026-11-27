@@ -18,6 +18,8 @@ on:
       - 'compose.yaml'
       - 'compose.second.yaml'
       - 'game-mods/**'
+      # Тесты мода не входят в образ: их правка не должна перезапускать игру.
+      - '!game-mods/**/tests/**'
 
 concurrency:
   group: deploy-valheim
