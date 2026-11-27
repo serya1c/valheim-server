@@ -18,12 +18,20 @@ internal static class LocaleTests
 
     private static int Main()
     {
-        foreach (string version in new[] { "1.0.16", "1.0.17", "1.0.20", "1.0.21" })
+        // The mod workflow bumps BuildVersion and appends to the allowlist, so these
+        // checks pin the invariants instead of one particular game version.
+        string[] supported = GameCompatibility.SupportedVersionsText.Split(new[] { ", " }, StringSplitOptions.None);
+        True(supported.Length > 0, "Empty list of supported game versions.");
+        foreach (string version in supported)
+        {
+            True(Regex.IsMatch(version, @"^\d+\.\d+\.\d+$"), "Malformed supported version: " + version);
             True(GameCompatibility.Supports(version), "Supported game rejected: " + version);
-        foreach (string version in new[] { null, "", "1.0.18", "1.0.19", "1.0.22", "1.0.210", "1.0.21 ", " 1.0.21" })
+            True(Array.IndexOf(supported, version) == Array.LastIndexOf(supported, version), "Duplicate supported version: " + version);
+        }
+        True(GameCompatibility.Supports(GameCompatibility.BuildVersion), "Build version is not allow-listed: " + GameCompatibility.BuildVersion);
+        Equal(supported[supported.Length - 1], GameCompatibility.BuildVersion);
+        foreach (string version in new[] { null, "", "1.0.210", "1.0.21 ", " 1.0.21", "9.9.9" })
             True(!GameCompatibility.Supports(version), "Unverified game accepted: " + version);
-        Equal("1.0.21", GameCompatibility.BuildVersion);
-        Equal("1.0.16, 1.0.17, 1.0.20, 1.0.21", GameCompatibility.SupportedVersionsText);
         Locale.SetLanguage("ru");
         Equal("Здоровье восстановлено.", Locale.Translate("Здоровье восстановлено."));
         True(Locale.SetLanguage(" EN "), "Language codes should accept case and whitespace.");
@@ -48,8 +56,8 @@ internal static class LocaleTests
         Equal("Client and server versions must match. Required: mod 0.4.2, Valheim 1.0.21 (server). Client: mod 0.4.1, Valheim 1.0.21.",
             Locale.Translate("Версии клиента и сервера должны совпадать. Требуются мод 0.4.2 и Valheim 1.0.21 (версия сервера). На клиенте: мод 0.4.1, Valheim 1.0.21."));
         foreach (string side in new[] { "сервере", "клиенте" })
-            Equal((side == "сервере" ? "Server" : "Client") + " Valheim version 1.0.22 is unsupported. Supported: " + GameCompatibility.SupportedVersionsText + ".",
-                Locale.Translate("Версия Valheim на " + side + " 1.0.22 не поддерживается модом. Поддерживаются " + GameCompatibility.SupportedVersionsText + "."));
+            Equal((side == "сервере" ? "Server" : "Client") + " Valheim version 9.9.9 is unsupported. Supported: " + GameCompatibility.SupportedVersionsText + ".",
+                Locale.Translate("Версия Valheim на " + side + " 9.9.9 не поддерживается модом. Поддерживаются " + GameCompatibility.SupportedVersionsText + "."));
 
         Equal("Terrain raised by 1,5 m within 20 m. Part of the area reached the height limit: ±8 m from original terrain. Part of the terrain was skipped: no ownership or the area was not loaded.",
             Locale.Translate("Поверхность поднята на 1,5 м в радиусе 20 м. Часть площади ограничена пределом высоты игры: ±8 м от исходного рельефа. Часть поверхности не обработана: нет управления или область не загрузилась."));
