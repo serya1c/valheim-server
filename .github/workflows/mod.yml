@@ -127,7 +127,6 @@ jobs:
       - name: Нужен ли PR
         id: diff
         env:
-          EVENT: ${{ github.event_name }}
           REFRESH: ${{ steps.target.outputs.refresh }}
         run: |
           set -euo pipefail
@@ -138,7 +137,7 @@ jobs:
           fi
           echo "Расхождения с закоммиченным состоянием:"
           git diff --stat -- app/builtin-mods game-mods/ValheimAdminRu
-          if python tools/mod_archive.py --event "$EVENT" --refresh "$REFRESH" > /tmp/needed; then
+          if python tools/mod_archive.py --refresh "$REFRESH" > /tmp/needed; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
