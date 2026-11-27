@@ -14,6 +14,18 @@ games = re.findall(r'"([0-9]+\.[0-9]+\.[0-9]+)"',
 build_game = re.search(r'BuildVersion\s*=\s*"([^"]+)"', compatibility).group(1)
 if not games or build_game not in games or len(games) != len(set(games)):
     raise SystemExit('Invalid supported game versions')
+
+
+def source_digest():
+    """Отпечаток исходников мода: DLL пересобирается из них детерминированно по смыслу."""
+    digest = hashlib.sha256()
+    for path in sorted(p for p in (root / 'src').rglob('*') if p.is_file()):
+        digest.update(path.relative_to(root).as_posix().encode() + b'\0')
+        digest.update(path.read_bytes())
+    digest.update(b'\0csproj\0' + (root / 'ValheimAdminRu.csproj').read_bytes())
+    return digest.hexdigest()
+
+
 dll = root / 'bin/Release/net48/ValheimAdminRu.dll'
 if not dll.is_file() or dll.read_bytes()[:2] != b'MZ':
     raise SystemExit('Build the plugin with build.ps1 first')
@@ -33,6 +45,7 @@ with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED, compressleve
         info.external_attr = 0o100644 << 16
         archive.writestr(info, content)
 descriptor = {'id': 'Hearth-ValheimAdmin', 'version': version, 'games': games,
-              'sha256': hashlib.sha256(target.read_bytes()).hexdigest()}
+              'sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
+              'source': source_digest()}
 target.with_suffix('.json').write_text(json.dumps(descriptor, indent=2) + '\n', encoding='utf-8')
 print(json.dumps(descriptor))
