@@ -97,6 +97,7 @@ jobs:
   release:
     name: Публикация релиза
     if: startsWith(github.ref, 'refs/tags/v')
+    # Установщики ниже собираются ради проверки исходников, в релиз не попадают.
     needs: [ launcher, installer-windows, installer-linux ]
     runs-on: ubuntu-latest
     steps:
@@ -105,26 +106,42 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          path: dist
-          merge-multiple: true
+          name: launcher-assets
+          path: dist/launcher
+      - name: Собрать релизный набор
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          # В релизе только то, чем пользуются игроки и владелец сервера:
+          # сборки лаунчера, встроенный админ-мод, архив проекта и контрольные суммы.
+          for name in Hearth-Launcher-Setup.exe Hearth-Launcher.exe Hearth-Launcher-Windows-x64.zip \
+                      Hearth-Launcher-Linux.tar.gz Hearth-Launcher-Install-Linux.sh; do
+            cp "dist/launcher/$name" release/
+          done
+          mod=$(python -c "import json;print(json.load(open('app/builtin-mods/ValheimAdminRu.json'))['version'])")
+          cp app/builtin-mods/ValheimAdminRu.zip "release/Hearth-Admin-$mod.zip"
+          git archive --format=zip -9 --prefix="valheim-server-${TAG#v}/" -o "release/valheim-server-$TAG.zip" HEAD
+          # Сам SHA256SUMS.txt в список не попадает: его ещё нет на момент подсчёта.
+          (cd release && find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -printf '%f\n' |
+             sort | xargs sha256sum > SHA256SUMS.txt)
+          ls -l release
       - name: gh release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
           set -uo pipefail
-          ls -l dist
-          gh --version || true
-          gh auth status || true
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "Релиз $TAG уже существует."
           elif out=$(gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --generate-notes 2>&1); then
             echo "$out"
           else
             echo "::error::gh release create --generate-notes: $(echo "$out" | tail -20)"
-            if ! out=$(gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "Сборки лаунчера и установщиков для $TAG." 2>&1); then
+            if ! out=$(gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TAG" --notes "Сборки лаунчера, встроенный Hearth Admin, архив проекта и SHA256SUMS." 2>&1); then
               echo "::error::gh release create --notes: $(echo "$out" | tail -20)"
               exit 1
             fi
           fi
-          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" dist/* --clobber
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" release/* --clobber
