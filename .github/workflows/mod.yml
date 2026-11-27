@@ -122,17 +122,29 @@ jobs:
       - name: Упаковка встроенного мода
         run: python game-mods/ValheimAdminRu/package.py
 
-      - name: Есть что коммитить?
+      # Ночная пересборка DLL даёт другие байты при том же коде. Если версия,
+      # allowlist и описатель не изменились — это не повод для PR.
+      - name: Нужен ли PR
         id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          REFRESH: ${{ steps.target.outputs.refresh }}
         run: |
+          set -euo pipefail
           if git diff --quiet -- app/builtin-mods game-mods/ValheimAdminRu; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Архив и исходники совпадают — обновлять нечего."
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Расхождения с закоммиченным состоянием:"
-            git diff --stat -- app/builtin-mods game-mods/ValheimAdminRu
+            exit 0
           fi
+          echo "Расхождения с закоммиченным состоянием:"
+          git diff --stat -- app/builtin-mods game-mods/ValheimAdminRu
+          if python tools/mod_archive.py --event "$EVENT" --refresh "$REFRESH" > /tmp/needed; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "PR не нужен: сборка отличается только байтами."
+          fi
+          echo "Причина: $(cat /tmp/needed)"
 
       - name: Ветка и PR с пересобранным модом
         if: steps.diff.outputs.changed == 'true'
